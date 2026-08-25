@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aas-model"
+version = "0.1.0"
+description = "Shared AAS pydantic submodel models (AID/AIMC + custom resource submodels) and AAS-JSON<->model (de)serialization, shared by the registration service (generator) and the aas-camel-dmp management node (parser). ADR-016."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "aas_pydantic>=0.4",
+    "basyx-python-sdk>=2.0.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
