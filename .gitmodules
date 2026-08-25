@@ -1,0 +1,3 @@
+[submodule "MQTTSchemas"]
+	path = MQTTSchemas
+	url = https://github.com/tristan-schwoerer/mqtt_message_schemas.git

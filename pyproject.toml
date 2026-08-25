@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aas-model"
-version = "0.1.0"
-description = "Shared AAS pydantic submodel models (AID/AIMC + custom resource submodels) and AAS-JSON<->model (de)serialization, shared by the registration service (generator) and the aas-camel-dmp management node (parser). ADR-016."
+version = "0.2.0"
+description = "Shared AAS data-model package (ADR-016): base models (vendored aas_pydantic) + generated IDTA templates + project submodel templates + resource/instantiation templates + build/schema helpers + AAS-JSON<->model (de)serialization. Used by the registration service (instantiation) and the aas-camel-dmp management node (parsing)."
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6",
-    "aas_pydantic>=0.4",
     "basyx-python-sdk>=2.0.1",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
