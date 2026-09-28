@@ -2,7 +2,7 @@ from typing import Literal, Dict
 from pydantic import model_validator
 from aas_pydantic import Property, ModelReference, Key
 from aas_model.submodel_templates.parameters import (
-    Parameters, ParameterItem, ParamReference,
+    Parameters, ParameterItem, ParameterEntry, ParamReference,
 )
 from ..constants import BASE_URL
 
@@ -110,7 +110,7 @@ class ResourceParameters(Parameters):
         The parameter SM for a generic Resource
     """
     id_short: str = "Parameters"
-    parameter: Dict[str, ParameterItem] = {
+    parameter: Dict[str, ParameterEntry] = {
         "Location": Position()
     }
 

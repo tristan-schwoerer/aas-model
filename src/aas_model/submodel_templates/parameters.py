@@ -12,18 +12,27 @@ pattern as generated aas_pydantic templates.
 Structure::
 
     Parameters
-    └── parameters[]             (ParameterItem — hierarchical, can nest)
-        ├── parameter            (Property — leaf value)
-        └── interface_reference  (ReferenceElement — optional AID link)
+    └── parameter[]            (ParamProp — a plain Property, OR
+                                ParameterItem — a group of them)
 
-Single (leaf) parameters hold ``parameter`` + ``interface_reference`` directly
-on the top-level ParameterItem.  Only genuinely structured parameters nest
-further via ``value`` (e.g. Location → Position → {x, y, yaw}).
+A parameter is a **plain Property** by default: a leaf parameter is addressed
+directly as ``Parameters/<name>``. Nest it in a ``ParameterItem`` only when
+the parameter genuinely groups several children (e.g. ``Location`` with its
+x/y/yaw coordinates), in which case the group is an SMC addressed as
+``Parameters/<name>``.
+
+Both forms live in the same ``parameter`` map, so a submodel can mix them::
+
+    Parameters
+    ├── Parameter              (Property)
+    └── Location               (SMC)
+        └── x                  (SMC)
+            └── parameter      (Property)
 """
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, Optional
+from typing import ClassVar, Dict, Optional, Union
 from aas_pydantic import (
     Submodel, SubmodelElementCollection,
     Property, ReferenceElement, ModelReference, Key
@@ -59,24 +68,29 @@ class ParamProp(Property):
 
 class ParameterItem(SubmodelElementCollection):
     """
-    A parameter definition — can contain nested sub-parameters or leaf values.
+    A parameter GROUP — use when several children belong together (e.g. a
+    position with x/y/yaw).
 
-    Single (leaf) parameters hold their ``parameter`` Property and
-    ``interface_reference`` directly on the top-level ParameterItem; only
-    genuinely structured parameters nest further via ``value`` (e.g. Location
-    → Position → {x, y, yaw}).  ``semantic_id`` is used (SMC-level) for
-    ontology alignment.
+    A single (leaf) parameter needs no wrapper: declare it as a plain
+    ``ParamProp`` in the ``Parameters.parameter`` map and address it as
+    ``Parameters/<name>``. ``semantic_id`` is used (SMC-level) for ontology
+    alignment on the group.
     """
     model_config = {"validate_default": True}
     semantic_id: str = PARAM_ITEM
-    description: str = "A named parameter with optional semanticId and potential nested children."
+    description: str = "A group of parameter values that belong together."
 
     parameter: Optional[ParamProp] = None
     interface_reference: Optional[ParamReference] = None
 
-    # Keys are child id_shorts → nested ParameterItems (only for structured
-    # parameters that genuinely nest further).
-    value: Dict[str, ParameterItem] = {}
+    # Keys are child id_shorts → a plain ParamProp child, or a nested
+    # ParameterItem when the child itself groups further children.
+    value: Dict[str, "ParameterEntry"] = {}
+
+# A parameter entry is EITHER a plain Property (the normal case) OR a
+# ParameterItem group. Both forms are accepted in the same map, so a submodel
+# can mix flat parameters with logically grouped ones.
+ParameterEntry = Union[ParamProp, ParameterItem]
 
 class Parameters(Submodel):
     """
@@ -90,5 +104,6 @@ class Parameters(Submodel):
     VERSION: ClassVar[str] = "1"
     REVISION: ClassVar[str] = "0"
 
-    # Keys are parameter id_shorts → dynamic map of ParameterItem.
-    parameter: Dict[str, ParameterItem] = {}
+    # Keys are parameter id_shorts → a plain ParamProp, or a ParameterItem
+    # when the parameter groups several children.
+    parameter: Dict[str, ParameterEntry] = {}

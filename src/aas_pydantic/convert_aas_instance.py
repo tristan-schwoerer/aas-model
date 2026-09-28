@@ -318,12 +318,34 @@ def _element_supplemental_sids(basyx_el) -> list:
     return out
 
 
+def _dict_element_classes(ann):
+    """Element classes of a ``Dict[str, E]`` annotation.
+
+    A container may accept a UNION of element classes — e.g. the Variables /
+    Parameters submodels take ``Union[VariableProp, VariableItem]`` so a
+    submodel can mix plain Properties with grouped SMCs in one map. Returns
+    every SubmodelElement class named by the annotation (empty when the value
+    type is not an element class).
+    """
+    args = typing.get_args(ann)
+    if len(args) != 2 or args[0] not in (str, int):
+        return []
+    inner = args[1]
+    if typing.get_origin(inner) is typing.Union:
+        candidates = typing.get_args(inner)
+    else:
+        candidates = (inner,)
+    return [c for c in candidates
+            if isinstance(c, type) and issubclass(c, aas_model.SubmodelElement)]
+
+
 def _multi_fields_by_sid(values_cls):
     """Map element-class semanticId → list of ``Dict[str, E]`` field names of
     the values model.  Every ``Dict[str, E]`` field is a multi-cardinality map;
     the element class carries its concept semanticId, so back-conversion groups
     by that semanticId (the sid now lives on the class instead of a
-    ``_multi_cardinality`` ClassVar)."""
+    ``_multi_cardinality`` ClassVar).  A container accepting a UNION of element
+    classes contributes one entry per class semanticId."""
     if values_cls is None:
         return {}
     try:
@@ -332,27 +354,37 @@ def _multi_fields_by_sid(values_cls):
         hints = {k: v.annotation for k, v in values_cls.model_fields.items()}
     result = {}
     for fname, ann in hints.items():
-        args = typing.get_args(ann)
-        if len(args) == 2 and args[0] in (str, int):
-            inner = args[1]
-            if isinstance(inner, type) and issubclass(inner, aas_model.SubmodelElement):
-                sid = _element_cls_sid(inner)
-                if sid:
-                    result.setdefault(sid, []).append(fname)
+        for inner in _dict_element_classes(ann):
+            sid = _element_cls_sid(inner)
+            if sid:
+                result.setdefault(sid, []).append(fname)
     return result
 
 
 def _multi_element_cls(values_cls, field: str):
-    """Element class of a ``Dict[str, E]`` field, or ``None``."""
+    """Element class of a ``Dict[str, E]`` field, or ``None``.
+
+    For a UNION-typed container the first element class is returned; the
+    back-conversion path then re-dispatches per element (see
+    ``_best_fit_subclass``), so a Property and an SMC can share one map.
+    """
+    classes = _multi_element_classes(values_cls, field)
+    return classes[0] if classes else None
+
+
+def _multi_element_classes(values_cls, field: str) -> list:
+    """ALL element classes a ``Dict[str, E]`` field accepts, or ``[]``.
+
+    A container may be annotated with a union of element classes (e.g.
+    ``Union[VariableProp, VariableItem]``) so flat Properties and grouped SMCs
+    can share one map. Callers that must pin a single class use
+    ``_multi_element_cls``; callers that can dispatch per element use this.
+    """
     try:
         hints = typing.get_type_hints(values_cls, include_extras=True)
-        args = typing.get_args(hints.get(field))
-        if args:
-            inner = args[-1]
-            return inner if isinstance(inner, type) else None
+        return _dict_element_classes(hints.get(field))
     except Exception:
-        pass
-    return None
+        return []
 
 
 def _unwrap_optional(ann):
@@ -382,6 +414,18 @@ def _has_direct_element_fields(cls) -> bool:
     return False
 
 
+def _dict_field_names(values_cls) -> list:
+    """Field names of a ``Dict[str, E]`` container on *values_cls*."""
+    if values_cls is None:
+        return []
+    try:
+        hints = typing.get_type_hints(values_cls, include_extras=True)
+    except Exception:
+        hints = {k: v.annotation for k, v in values_cls.model_fields.items()}
+    return [f for f, ann in hints.items()
+            if f not in aas_model._ELEMENT_META_KEYS and _dict_element_classes(ann)]
+
+
 def _container_named_field_data(cls, basyx_children):
     """Children of an SMC whose leaf children are DIRECT named fields (no
     values model): route by ``id_short`` to element-typed fields, by
@@ -400,6 +444,11 @@ def _container_named_field_data(cls, basyx_children):
             element_fields[fname] = ann
     dict_fields = _multi_fields_by_sid(cls)
     out = {}
+    # A class with a single Dict[str, E] container routes any unmatched child
+    # there, so a child published without a semanticId still lands in the
+    # container instead of being flattened onto the class (and rejected).
+    fallback_field = next(iter(
+        {f for f in _dict_field_names(cls)}), None) if len(_dict_field_names(cls)) == 1 else None
     for c in basyx_children:
         named = element_fields.get(c.id_short)
         if named is not None:
@@ -407,6 +456,8 @@ def _container_named_field_data(cls, basyx_children):
             continue
         sid = convert_util.get_semantic_id_value_of_model(c)
         fields = dict_fields.get(sid) or []
+        if not fields and fallback_field is not None:
+            fields = [fallback_field]
         if len(fields) == 1:
             elem_cls = _multi_element_cls(cls, fields[0])
             out.setdefault(fields[0], {})[c.id_short] = _container_element_to_pydantic(
@@ -595,7 +646,11 @@ def _container_children_data(basyx_children, values_cls):
         else:
             field = sole_field  # pure Dict container — the map holds children
         if field is not None:
-            elem_cls = _multi_element_cls(values_cls, field)
+            # A union-typed container (flat Property + grouped SMC in one map)
+            # must not pin the first candidate: let the semanticId registry
+            # resolve each child to its own class.
+            candidates = _multi_element_classes(values_cls, field)
+            elem_cls = candidates[0] if len(candidates) == 1 else None
             converted = _container_element_to_pydantic(c, expected_cls=elem_cls)
             key = _dict_id_short_to_key(c.id_short, _multi_key_type(values_cls, field))
             out.setdefault(field, {})[key] = converted

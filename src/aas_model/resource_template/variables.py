@@ -6,21 +6,28 @@ which follows the same structural pattern as generated aas_pydantic templates.
 
 from __future__ import annotations
 
-from aas_pydantic import Key, ModelReference
-
 from aas_model.submodel_templates.variables import (
-    Variables, VariableItem, VariableProp, InterfaceRef, AID_SUBMODEL_REF,
+    Variables, VariableProp,
 )
 
 
-def variable(semantic_id: str, interface: ModelReference | None = None) -> VariableItem:
-    """Build a leaf VariableItem: ontology concept + reference to the AID
-    interface, both as direct children of the top-level VariableItem."""
-    if interface is None:
-        interface = ModelReference(key=(Key(type_="Submodel", value=AID_SUBMODEL_REF),))
-    return VariableItem(
-        variable=VariableProp(value=semantic_id),
-        interface_reference=InterfaceRef(value=interface),
+def variable(semantic_id: str) -> VariableProp:
+    """Build a leaf variable as a plain Property.
+
+    The ontology concept URI rides as a supplemental semantic id; the
+    Property's VALUE is the live value the AIMC mappings sink into. A leaf
+    variable is a direct child of the submodel, so an AIMC sink addresses it
+    as ``Variables/<name>`` with no extra wrapper level. It deliberately
+    carries NO ``interface_reference`` — with AIMC-driven mappings the
+    live-data linkage lives in the AIMC submodel, so a static AID reference
+    would point nowhere.
+
+    Use ``VariableItem`` instead when a variable genuinely groups several
+    children.
+    """
+    return VariableProp(
+        value="",
+        supplemental_semantic_ids=[semantic_id],
     )
 
 

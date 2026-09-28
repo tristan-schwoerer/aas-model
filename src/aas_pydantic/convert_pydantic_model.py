@@ -444,12 +444,24 @@ def create_property(
 
 
 def _dict_item_type(ann):
-    """Element class of a ``Dict[str, E]`` annotation, or ``None``."""
+    """Element class of a ``Dict[str, E]`` annotation, or ``None``.
+
+    A container may accept a UNION of element classes — e.g. the Variables /
+    Parameters submodels take ``Union[VariableProp, VariableItem]`` so a
+    submodel can mix plain Properties with grouped SMCs in one map. The first
+    element class is returned; children are then built from the concrete
+    instances, so the other union members convert correctly too.
+    """
     args = typing.get_args(ann)
     if len(args) == 2 and args[0] is str:
         inner = args[1]
-        if isinstance(inner, type) and issubclass(inner, aas_model.SubmodelElement):
-            return inner
+        if typing.get_origin(inner) is typing.Union:
+            candidates = typing.get_args(inner)
+        else:
+            candidates = (inner,)
+        for candidate in candidates:
+            if isinstance(candidate, type) and issubclass(candidate, aas_model.SubmodelElement):
+                return candidate
     return None
 
 
