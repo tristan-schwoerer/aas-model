@@ -76,12 +76,17 @@ def skill_operation(
     operation-delegation service via the ``invocationDelegation`` qualifier.
 
     The input/inoutput/output variables mirror the native MQTT action's
-    command / commandResponse payloads (Uuid inout, State/Outcome output) so
+    command / commandResponse payloads (Uuid inout, State output) so
     the operation can also be rendered and manually invoked from the AAS Web
     GUI.  The delegation endpoint uses the ``{delegation_base}`` /
     ``{aas_id_short}`` macros (resolved by id_injector — ``delegation_base``
     defaults to ``constants.DELEGATION_BASE`` and can be overridden per
     resource config to point at that resource's DMP).
+
+    ``Outcome`` (the FOND branch discriminator) is NOT a default output —
+    only actions whose native response actually carries one declare it
+    (the process skills; configs author it explicitly). Registration-style
+    actions (Occupy/Release) and Halt answer ``State`` only.
     """
     op = SkillOperation()
     op.qualifiers = [
@@ -107,10 +112,6 @@ def skill_operation(
     if has_response:
         op.output_variable = [
             _operation_variable("State", description="The state of the command being executed"),
-            _operation_variable(
-                "Outcome", value_type="xs:integer",
-                description="Optional FOND outcome discriminator",
-            ),
         ]
     return op
 

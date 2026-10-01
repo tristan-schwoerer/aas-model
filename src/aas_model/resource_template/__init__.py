@@ -11,7 +11,6 @@ from .asset import ResourceTypeAAS
 from .nameplate import nameplate
 from .asset_interfaces_description import (
     asset_interfaces_description, mqtt_action, mqtt_property,
-    rest_action, rest_property, rest_interface,
 )
 from .control_component_instance import (
     ResourceControlComponentInstance, control_component_instance, extended_skill,
@@ -19,12 +18,9 @@ from .control_component_instance import (
 )
 from .asset_interfaces_mapping_configuration import (
     asset_interfaces_mapping_configuration,
-    skill_mapping_configuration, skill_request_mapping_configuration,
+    skill_operation_mapping_configuration,
+    operation_ref,
     variables_mapping_configuration,
-    property_mapping_configuration,
-)
-from .property_delegation import (
-    write_delegation_qualifier, ensure_property_write_delegation,
 )
 from .variables import variables, variable
 from .parameters import Position, ResourceParameters, resource_parameters
@@ -35,9 +31,6 @@ __all__ = [
     "asset_interfaces_description",
     "mqtt_action",
     "mqtt_property",
-    "rest_action",
-    "rest_property",
-    "rest_interface",
     "ResourceControlComponentInstance",
     "control_component_instance",
     "extended_skill",
@@ -46,12 +39,10 @@ __all__ = [
     "native_action_ref",
     "skill_ref",
     "asset_interfaces_mapping_configuration",
-    "skill_mapping_configuration",
-    "skill_request_mapping_configuration",
+    "skill_operation_mapping_configuration",
+    "operation_ref",
     "variables_mapping_configuration",
-    "property_mapping_configuration",
     "write_delegation_qualifier",
-    "ensure_property_write_delegation",
     "variables",
     "variable",
     "Position",

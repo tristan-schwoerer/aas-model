@@ -369,7 +369,7 @@ def datapoint_from_schema(
     (the topic the message comes from).  Pass the WoT form fields directly —
     ``href`` (topic/URI), ``op`` (e.g. ``observeProperty``), ``content_type``,
     ``subprotocol`` — or a ready ``forms`` instance (e.g. ``MqttForm`` from
-    ``aas_model.submodel_templates.mqtt_aid``) to include MQTT qualifiers.
+    ``aas_model.submodel_templates.aid``) to include MQTT qualifiers.
 
     ``schema_url`` (the JSON Schema URL) is recorded as a supplemental
     semantic id on the built datapoint.

@@ -31,11 +31,14 @@ def put(container: Any, key: str, element: SubmodelElement) -> SubmodelElement:
 
 
 # The mandatory default Resource skills, mirrored across the CCI (skills +
-# endpoints relationships), the AID (native MQTT actions + REST
-# operation-delegation actions) and the AIMC (skill mapping configurations).
-# Each entry is ``(name, synchronous, has_response)``.
+# endpoints relationships), the AID (native MQTT actions) and the AIMC (one
+# operation-delegation mapping per skill, DMP v3).
+# Each entry is ``(name, synchronous, has_response)``. ``has_response`` is
+# TRUE for every skill: the delegated operation completes through the
+# command affordance's DECLARED reply topic (correlated by Uuid) — an
+# undeclared response form leaves the interaction unresolved.
 DEFAULT_SKILLS = (
-    ("Halt", True, False),
+    ("Halt", True, True),
     ("Occupy", True, True),
     ("Release", True, True),
 )

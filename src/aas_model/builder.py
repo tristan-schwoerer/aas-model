@@ -20,7 +20,6 @@ from typing import Dict, Any
 from aas_pydantic import convert_model_to_aas
 
 from aas_model.resource_template.asset import ResourceTypeAAS
-from aas_model.resource_template.property_delegation import ensure_property_write_delegation
 from aas_model.id_injector import inject_ids
 from aas_model.constants import BASE_URL, SITE, DELEGATION_BASE
 
@@ -105,7 +104,6 @@ def build_from_dict(data: Dict[str, Any]) -> Any:
     """
     delegation_base = data.get("delegation_base") or DELEGATION_BASE
     asset = ResourceTypeAAS.model_validate(merge_instance_config(data))
-    ensure_property_write_delegation(asset)
     inject_ids(asset, delegation_base=delegation_base)
     return convert_model_to_aas(asset)
 
@@ -204,9 +202,9 @@ def build_resource_type_aas(
         asset.specific_asset_ids = sids
 
     aid = asset.asset_interfaces_description
-    if aid and hasattr(aid, "interface_mqtt"):
-        iface = aid.interface_mqtt
-        if hasattr(iface, "EndpointMetadata"):
+    if aid:
+        iface = aid.InterfaceTemplateForMQTT.get("interface_mqtt")
+        if iface is not None and hasattr(iface, "EndpointMetadata"):
             iface.EndpointMetadata.base.value = broker_uri
         if hasattr(iface, "title"):
             iface.title.value = station_name
@@ -214,6 +212,5 @@ def build_resource_type_aas(
     # relationships (see resource_template/control_component_instance.py) —
     # no broker endpoint to patch here.
 
-    ensure_property_write_delegation(asset)
     inject_ids(asset, delegation_base=delegation_base)
     return asset

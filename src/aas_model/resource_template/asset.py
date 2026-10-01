@@ -31,9 +31,9 @@ from aas_pydantic.submodel_templates.nameplate import Nameplate
 from aas_pydantic.submodel_templates.capability_description import CapabilityDescription
 from aas_pydantic.submodel_templates.hierarchical_structures import HierarchicalStructures
 
-from aas_model.submodel_templates.mqtt_aid import MqttAssetInterfacesDescription
+from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
 from aas_model.submodel_templates.variables import Variables
-from aas_model.submodel_templates.aimc import Aimc
+from aas_model.submodel_templates import Aimc
 
 from aas_model.resource_template.nameplate import nameplate
 from aas_model.resource_template.asset_interfaces_description import asset_interfaces_description
@@ -80,7 +80,7 @@ class ResourceTypeAAS(AAS):
     nameplate: Nameplate = nameplate()
 
     # ── Asset Interfaces Description ──────────────────────────────────────
-    asset_interfaces_description: MqttAssetInterfacesDescription = asset_interfaces_description()
+    asset_interfaces_description: DmpAssetInterfacesDescription = asset_interfaces_description()
 
     # ── Control Component Instance ────────────────────────────────────────
     control_component_instance: ResourceControlComponentInstance = control_component_instance()

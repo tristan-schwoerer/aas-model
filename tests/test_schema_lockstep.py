@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 from aas_model.submodel_templates import Aimc
-from aas_model.submodel_templates.mqtt_aid import MqttAssetInterfacesDescription
+from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
 
 HERE = Path(__file__).parent
 GOLDEN = HERE / "schema_snapshots.json"
@@ -22,7 +22,7 @@ GOLDEN = HERE / "schema_snapshots.json"
 def _schemas() -> dict:
     return {
         "Aimc": Aimc.model_json_schema(),
-        "MqttAssetInterfacesDescription": MqttAssetInterfacesDescription.model_json_schema(),
+        "DmpAssetInterfacesDescription": DmpAssetInterfacesDescription.model_json_schema(),
     }
 
 

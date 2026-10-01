@@ -54,33 +54,37 @@ AID_MQTT_RESPONSE_FORM = f"{BASE_URL}/aid/MqttResponseForm/1/0"
 AID_MQTT_RETAIN = f"{BASE_URL}/aid/MqttRetain/1/0"
 AID_MQTT_CONTROL_PACKET = f"{BASE_URL}/aid/MqttControlPacket/1/0"
 AID_MQTT_QOS = f"{BASE_URL}/aid/MqttQos/1/0"
+# WoT MQTT binding (MQTT 5) request/reply correlation: ``requestReply``
+# marks the action as a correlated request/reply interaction and
+# ``responseTopic`` names the MQTT 5 Response Topic the reply is
+# delivered on (the requester sets it as the PUBLISH response-topic
+# property; the responder echoes the request's Correlation Data).
+AID_MQTT_REQUEST_REPLY = f"{BASE_URL}/aid/MqttRequestReply/1/0"
+AID_MQTT_RESPONSE_TOPIC = f"{BASE_URL}/aid/MqttResponseTopic/1/0"
 AID_INPUT_SCHEMA = f"{BASE_URL}/aid/InputSchema/1/0"
 AID_OUTPUT_SCHEMA = f"{BASE_URL}/aid/OutputSchema/1/0"
-AID_SYNCHRONOUS = f"{BASE_URL}/aid/Synchronous/1/0"
+AID_SYNCHRONOUS = "https://www.w3.org/2019/wot/td#synchronous"
+AID_WOT_SAFE = "https://www.w3.org/2019/wot/td#safe"
+AID_WOT_IDEMPOTENT = "https://www.w3.org/2019/wot/td#idempotent"
 
 # WoT Thing Description 2.0 ``ActionAffordance.input`` / ``.output`` vocabulary
 # (w3.org — kept inline per the constants policy).  Shared by the MQTT and the
-# REST action DataSchemas.
+# generic (Dmp) action DataSchemas.
 AID_ACTION_INPUT = "https://www.w3.org/2019/wot/td#hasInput"
 AID_ACTION_OUTPUT = "https://www.w3.org/2019/wot/td#hasOutput"
+AID_WOT_OPERATION_TYPE = "https://www.w3.org/2019/wot/td#hasOperationType"
+AID_WOT_RESPONSE_FORM = "https://www.w3.org/2019/wot/hypermedia#response"
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# REST Asset Interfaces Description — operation-delegation interface
-# ═══════════════════════════════════════════════════════════════════════════════
+# AIMC mapping extension (DMP v3, ADR-022): the OPTIONAL correlated-reply
+# direction of an operation mapping — mirrors the IDTA ``Transformation``
+# vocabulary member.  Authored on ``DmpMappingConfiguration``; when absent the
+# reply passes through unchanged.
+AIMC_RESPONSE_TRANSFORMATION = ("https://admin-shell.io/idta/"
+                                "AssetInterfacesMappingConfiguration/2/0/"
+                                "MappingConfiguration/ResponseTransformation")
 
-AID_REST_OPERATION = f"{BASE_URL}/aid/RestOperation/1/0"
-AID_REST_PROPERTY = f"{BASE_URL}/aid/RestProperty/1/0"
-AID_REST_FORM = f"{BASE_URL}/aid/RestForm/1/0"
-AID_REST_HTTP_METHOD = f"{BASE_URL}/aid/RestMethod/1/0"
-
-# WoT operation types for the REST delegation interface.
-AID_WOT_WRITE_PROPERTY = "https://www.w3.org/2019/wot/td#writeProperty"
-AID_WOT_INVOKE_ACTION = "https://www.w3.org/2019/wot/td#invokeAction"
-
-# Property write-delegation qualifier — carried on a Property to signal that
-# writes to it are forwarded to the referenced REST write endpoint (the
-# ``interface_rest`` property describing the DMP route).  ``type_`` is the
-# ConceptQualifier type string; the semantic id is optional.
-WRITE_DELEGATION = "writeDelegation"
-WRITE_DELEGATION_SEMANTIC = f"{BASE_URL}/aid/WriteDelegation/1/0"
+# Property write-delegation (``writeDelegation`` ConceptQualifier, DMP v3):
+# configs author the qualifier directly — the convention is documented in
+# resource_template/property_delegation.py (external-caller documentation
+# only; the DMP wires its write-through routes from it).
 
