@@ -7,19 +7,54 @@ These models follow the same pattern as aas_pydantic generated templates:
 - Typed leaf elements (Property, ReferenceElement, File, etc.) with defaults
 
 Modules:
-    mqtt_aid           — MQTT-extended AssetInterfacesDescription
+    aid                — DMP-extended AID (MQTT + generic WoT action layer)
     execution_model    — Skills ExecutionModel (parameters, conditions, effects)
     skills             — Extended CCI Skill with ExecutionModel
     variables          — Variables submodel (custom, not yet IDTA)
     parameters         — Parameters submodel (custom, not yet IDTA)
+
+The AIMC (AssetInterfacesMappingConfiguration) is extended here (DmpAimc):
+the DMP mapping extension adds the OPTIONAL ``ResponseTransformation`` blob
+(the correlated-reply direction of an operation mapping, ADR-022) and the
+DMP-facing names alias onto the extended classes
+(``Aimc`` = ``DmpAimc``, ``AimcMappingConfiguration`` = ``DmpMappingConfiguration``).
 """
 
-from aas_model.submodel_templates.mqtt_aid import (
-    MqttAssetInterfacesDescription,
+from aas_model.submodel_templates.aid import (
+    DmpAssetInterfacesDescription,
+    DmpAction,
+    DmpActionInput,
+    DmpActionOutput,
+    DmpActions,
+    DmpForm,
+    DmpResponseForm,
+    DmpHttpInterface,
+    DmpModbusInterface,
+    DmpOpcuaInterface,
+    OpcuaForm,
+    OpcuaActionForm,
+    OpcuaAction,
+    OpcuaProperty,
+    OpcuaActions,
+    OpcuaProperties,
+    UavComponentOf,
+    OpcuaInteractionMetadata,
+    DmpBacnetInterface,
+    DmpIolinkInterface,
     MqttAction,
+    MqttActions,
     MqttProperty,
+    MqttProperties,
     MqttForm,
+    MqttActionForm,
     MqttResponseForm,
+    MqttInterface,
+)
+from aas_model.submodel_templates.aimc import (
+    DmpAimc,
+    DmpMappingConfiguration,
+    DmpMappingConfigurations,
+    DmpResponseTransformation,
 )
 from .control_component_instance import (
     ExecutionModel,
@@ -33,14 +68,27 @@ from .control_component_instance import (
     SkillInterfaceRelationship,
     ResourceEndpoints,
 )
-from .rest_aid import RestInterface, RestAction, RestProperty, RestForm, RestProperties
 from .variables import Variables
 from .parameters import Parameters
-from .aimc import Aimc
+# The AIMC submodel is the GENERATED IDTA template + the DMP extension
+# (ResponseTransformation, ADR-022). Alias the DMP-facing names onto it.
+from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import (
+    Transformation,
+)
+
+Aimc = DmpAimc
+AimcMappingConfiguration = DmpMappingConfiguration
+AimcMappingConfigurations = DmpMappingConfigurations
 
 __all__ = [
-    # MQTT AID
-    "MqttAssetInterfacesDescription",
+    # DMP AID (generated template + MQTT and generic WoT extensions)
+    "DmpAssetInterfacesDescription",
+    "DmpAction",
+    "DmpActions",
+    "DmpForm",
+    "DmpResponseForm",
+    "MqttActionForm",
+    "OpcuaActionForm",
     "MqttAction",
     "MqttProperty",
     "MqttForm",
@@ -58,13 +106,11 @@ __all__ = [
     "SkillInterfaceRelationship",
     "ResourceEndpoints",
     # REST AID interface
-    "RestInterface",
-    "RestAction",
-    "RestProperty",
-    "RestForm",
-    "RestProperties",
     # Custom submodels
     "Variables",
     "Parameters",
     "Aimc",
+    "AimcMappingConfiguration",
+    "AimcMappingConfigurations",
+    "Transformation",
 ]

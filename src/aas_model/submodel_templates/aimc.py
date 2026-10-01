@@ -1,112 +1,58 @@
-"""AIMC submodel — Asset Interfaces Mapping Configuration (IDTA 02027 2/0 based).
+"""DMP-extended AssetInterfacesMappingConfiguration — extensions over the
+generated IDTA AIMC.
 
-Maps AID interface sources (properties) to AAS sinks (Variables / Skills /
-Parameters) so the DataBridge can route live data.  The mapping between a
-source's payload fields and each sink is expressed in the ``Transformation``
-Lua script (``aimc_main(sources)``).
+Layering (DMP v3): the generated IDTA template
+(``aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration``)
+stays PRISTINE — the DMP extension lives HERE:
 
-The concepts come from the generated IDTA AIMC 2.0 template:
-``MappingConfiguration`` carries ``default_polling_interval``, a
-``Transformation`` (a Blob of Lua source, ``text/plain``), ``Sources[]`` and
-``Sinks[]``.  This module subclasses the generated ``Transformation`` (a Blob
-of Lua source, ``text/plain``) and narrows the mapping configuration to use it,
-while inheriting ``Sources``/``Sinks`` straight from the generated container
-class.
+- **``DmpMappingConfiguration``** adds the OPTIONAL ``ResponseTransformation``
+  blob: the correlated-REPLY direction of an operation mapping. A mapping
+  whose SOURCE references an Operation SubmodelElement (the ``Operation`` key
+  type classifies it as an interaction, ADR-022) carries the REQUEST
+  transformation in the IDTA ``Transformation`` blob and, optionally, the
+  RESPONSE transformation in ``ResponseTransformation`` — both directions of
+  the bi-directional action contract are then authored explicitly. When the
+  response blob is absent the reply passes through unchanged (one-MC
+  authoring default).
 
-Named-field style: containers hold their children as DIRECT named fields
-(no ``value``/``submodel_element`` wrapper).
-
-Structure (IDTA 02027 2/0)::
-
-    AssetInterfacesMappingConfiguration
-    └── MappingConfigurations[]              (SML)
-        └── MappingConfiguration             (SMC)
-            ├── default_polling_interval     (Property)
-            ├── transformation               (Transformation — Blob, text/plain Lua)
-            ├── Sources[]                    (SML)
-            │   └── Source                   (SMC: source ref + polling_interval + source_id)
-            └── Sinks[]                      (SML)
-                └── Sink                     (SMC: sink ref + sink_id)
+The semantic id mirrors the IDTA ``Transformation`` vocabulary member
+(``.../MappingConfiguration/ResponseTransformation``).
 """
 
 from __future__ import annotations
 
-from typing import ClassVar, List
+from typing import ClassVar, List, Optional
 
-from pydantic import model_validator
-from aas_pydantic import (
-    Submodel,
-)
 from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import (
-    Sources,
-    Sinks,
-    Sources_t, Sinks_t,
+    AssetInterfacesMappingConfiguration as _BaseAimc,
     MappingConfiguration as _BaseMappingConfiguration,
     MappingConfigurations as _BaseMappingConfigurations,
-    Transformation as _BaseTransformation,
-    Transformation_t,
+    Blob,
 )
 
-AIMC_SUBMODEL = "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/Submodel"
-AIMC_MAPPING_CONFIGURATIONS = "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/1/0/MappingConfigurations"
-AIMC_MAPPING_CONFIGURATION = "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
-AIMC_TRANSFORMATION = "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Transformation"
+from aas_model.constants import AIMC_RESPONSE_TRANSFORMATION
 
 
-class Transformation(_BaseTransformation):
-    """The AIMC transformation — the Lua ``aimc_main(sources)`` script.
-
-    Subclasses the generated AIMC ``Transformation`` (a Blob) so it matches
-    the ``Transformation_t`` annotation on ``AimcMappingConfiguration``; the
-    script is stored as bytes.  A plain Lua string is accepted on input and
-    encoded, so configs can be authored as text.
-    """
-    semantic_id: str = AIMC_TRANSFORMATION
-    description: str = (
-        "The transformation allows for transforming incoming data before "
-        "writing it to the sinks. The transformation must contain an "
-        '"aimc_main(sources)" entrypoint function in Lua.'
-    )
+class DmpResponseTransformation(Blob):
+    """The correlated-REPLY transformation of an operation mapping: device
+    response → caller-facing reply (same ``aimc_main(sources)`` Lua contract,
+    keyed by the action name)."""
+    semantic_id: str = AIMC_RESPONSE_TRANSFORMATION
+    description: str = "The optional response-direction transformation of an operation mapping: the correlated reply from the asset's command affordance is transformed before it is returned to the caller. Must contain an \"aimc_main(sources)\" entrypoint function in Lua. When absent the reply passes through unchanged."
     content_type: str = "text/plain"
 
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_text_to_bytes(cls, data):
-        if isinstance(data, dict) and isinstance(data.get("value"), str):
-            return {**data, "value": data["value"].encode("utf-8")}
-        return data
+
+class DmpMappingConfiguration(_BaseMappingConfiguration):
+    """IDTA MappingConfiguration + the optional response-direction blob."""
+    ResponseTransformation: Optional[DmpResponseTransformation] = None
 
 
-class AimcMappingConfiguration(_BaseMappingConfiguration):
-    """A single mapping: AID sources → AAS sinks + a Lua transformation.
-
-    ``Sources``/``Sinks`` are required (One) in the template — provided here
-    so the variant constructs; ``Transformation`` is narrowed to the
-    dedicated Blob concept."""
-    Sources: Sources_t = Sources()
-    Sinks: Sinks_t = Sinks()
-    Transformation: Transformation_t = Transformation()
+class DmpMappingConfigurations(_BaseMappingConfigurations):
+    """IDTA MappingConfigurations list over the DMP-extended configuration."""
+    item_type: ClassVar = DmpMappingConfiguration
+    value: List[DmpMappingConfiguration] = []
 
 
-class AimcMappingConfigurations(_BaseMappingConfigurations):
-    """List of MappingConfigurations (narrowed to the Transformation variant)."""
-    item_type: ClassVar = AimcMappingConfiguration
-    value: List[AimcMappingConfiguration] = []
-
-
-class Aimc(Submodel):
-    """Asset Interfaces Mapping Configuration — maps AID sources to AAS sinks."""
-    semantic_id: str = AIMC_SUBMODEL
-    description: str = (
-        "Maps AID interface affordances (sources) to submodel elements "
-        "(sinks) for live-data routing via the DataBridge."
-    )
-    VERSION: ClassVar[str] = "2"
-    REVISION: ClassVar[str] = "0"
-
-    MappingConfigurations: AimcMappingConfigurations = AimcMappingConfigurations()
-
-
-AimcMappingConfiguration.model_rebuild()
-AimcMappingConfigurations.model_rebuild()
-Aimc.model_rebuild()
+class DmpAimc(_BaseAimc):
+    """IDTA AssetInterfacesMappingConfiguration over the DMP-extended list."""
+    MappingConfigurations: DmpMappingConfigurations = DmpMappingConfigurations()
