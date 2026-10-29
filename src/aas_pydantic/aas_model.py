@@ -183,7 +183,7 @@ def _stamp_container_id_shorts(model: Any) -> None:
     (defaults included).  Children are copied, never mutated.
 
     Named-field style: dynamic maps are ``Dict[str, X]`` fields anywhere on a
-    container (``Variables.variable``, ``MqttActions.property_name``,
+    container (``StateGroup.value``, ``MqttActions.property_name``,
     ``Endpoints.endpoint``, …)."""
     try:
         hints = typing.get_type_hints(type(model), include_extras=True)

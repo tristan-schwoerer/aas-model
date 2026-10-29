@@ -13,14 +13,20 @@ from aas_model.resource_template.resources import InspectionStation
 from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import SourcesItem, SinksItem
 from aas_model.submodel_templates import AimcMappingConfiguration, DmpResponseSink, DmpResponseSource
 from aas_model.resource_template.references import (
-    MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, skill_ref, variable_ref,
+    MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, series_segment_ref,
+    skill_ref, variable_ref,
 )
 from aas_model.submodel_templates.control_component_instance import (
     ExtendedSkill, SkillOperation, SkillInterfaceRelationship, OptionalVariable,
 )
 from aas_pydantic.submodel_templates.capability_description import CapabilityRelations, CapabilityRealizedBy
 from aas_model.json_schema_aid import datapoint_from_schema, load_schema
-from aas_model.submodel_templates.variables import VariableProp
+from aas_model.submodel_templates.variables import MeasurementsGroup, VariableProp
+from aas_model.submodel_templates.time_series import (
+    DmpLinkedSegment, InfluxDb2Target, RecordField, TimeSeriesCollection, TimeSeriesMetadata, TimeSeriesRecord,
+    TimeSeriesSegments,
+)
+from aas_pydantic.submodel_templates.time_series import Name
 from aas_model.submodel_templates.aid import DmpActionInput, DmpActionOutput, MqttAction, MqttActionForm, MqttForm
 from aas_pydantic.submodel_templates.asset_interfaces_description import Title
 from aas_model.submodel_templates.hierarchical_structures import ResourceHierarchicalStructures
@@ -115,11 +121,8 @@ def omron_camera() -> InspectionStation:
         }
     )
 
-    for observation, schema, field in (
-        ("Image", "image", "Image"),
-        ("QualityResult", "qualityResult", "Result"),
-    ):
-        url = f"{SCHEMA_BASE}/{schema}.schema.json"
+    for observation in ("Image", "QualityResult"):
+        url = f"{SCHEMA_BASE}/{observation[0].lower() + observation[1:]}.schema.json"
         interaction.properties.property_name[observation] = datapoint_from_schema(
             load_schema(url),
             key=observation,
@@ -129,18 +132,35 @@ def omron_camera() -> InspectionStation:
             readOnly="true",
             forms=MqttForm(href=f"DATA/{observation}", mqv_retain="true", mqv_qos="0"),
         )
-        resource.variables.variable[observation] = VariableProp(
-            id_short=observation, supplemental_semantic_ids=[f"{CSSX}#{observation}"],
-        )
-        mappings.append(
-            AimcMappingConfiguration(
-                id_short=f"Observe{observation}",
-                DefaultPollingInterval="0.0",
-                Sources=[
-                    SourcesItem(Source=affordance_ref(MQTT_INTERFACE, "properties", observation), SourceId=observation)
-                ],
-                Sinks=[SinksItem(Sink=variable_ref(observation), SinkId=observation)],
-                Transformation=f"function aimc_main(sources) return {{ {observation} = sources.{observation}.{field} }} end",
-            )
-        )
+    # The latest image, as a Property: images have no place in a time series. Each quality result, one row into
+    # Variables/Measurements/QualityResult.
+    resource.variables.Measurements = MeasurementsGroup(value={
+        "Image": VariableProp(id_short="Image", supplemental_semantic_ids=[f"{CSSX}#Image"]),
+        "QualityResult": TimeSeriesCollection(
+            Metadata=TimeSeriesMetadata(Name=Name(value={"en": "Quality results"}), Record=TimeSeriesRecord(field={
+                "Uuid": RecordField(value_type="xs:string", description="The inspected product's Uuid"),
+                "Result": RecordField(value_type="xs:string", supplemental_semantic_ids=[f"{CSSX}#QualityResult"],
+                                      description="Ok or NotOk"),
+            })),
+            Segments=TimeSeriesSegments(LinkedSegment={
+                "Live": DmpLinkedSegment(InfluxDb2Target=InfluxDb2Target(Measurement="inspection_quality")),
+            }),
+        ),
+    })
+    mappings.extend([
+        AimcMappingConfiguration(
+            id_short="Image", DefaultPollingInterval="0.0",
+            Sources=[SourcesItem(SourceId="Image", Source=affordance_ref(MQTT_INTERFACE, "properties", "Image"))],
+            Sinks=[SinksItem(SinkId="Image", Sink=variable_ref("Measurements", "Image"))],
+            Transformation="function aimc_main(sources) return { Image = sources.Image.Image } end",
+        ),
+        AimcMappingConfiguration(
+            id_short="QualityResult", DefaultPollingInterval="0.0",
+            Sources=[SourcesItem(SourceId="QualityResult",
+                                 Source=affordance_ref(MQTT_INTERFACE, "properties", "QualityResult"))],
+            Sinks=[SinksItem(SinkId="Live", Sink=series_segment_ref("Measurements", "QualityResult"))],
+            Transformation="function aimc_main(sources) local result = sources.QualityResult "
+                           "return { Live = { Uuid = result.Uuid, Result = result.Result } } end",
+        ),
+    ])
     return resource

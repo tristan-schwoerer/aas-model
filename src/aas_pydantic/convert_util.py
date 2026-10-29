@@ -1,7 +1,6 @@
 import datetime
 import json
 import re
-from types import NoneType
 from typing import Any, Dict, List, Union
 from basyx.aas import model
 
@@ -10,7 +9,6 @@ import typing
 from basyx.aas.model import datatypes
 from pydantic import BaseModel, ConfigDict
 from pydantic.fields import FieldInfo
-from pydantic_core import PydanticUndefined
 
 from aas_pydantic import aas_model
 
@@ -292,67 +290,6 @@ def get_data_specification_for_attribute(
     )
 
 
-def get_immutable_data_specification_for_attribute_name(
-    attribute_name: str,
-) -> model.EmbeddedDataSpecification:
-    model_keys = get_model_keys_for_data_specification(attribute_name)
-    return model.EmbeddedDataSpecification(
-        data_specification=model.ExternalReference(
-            key=model_keys,
-        ),
-        data_specification_content=model.DataSpecificationIEC61360(
-            preferred_name=model.LangStringSet({"en": "immutable"}),
-            value=attribute_name,
-        ),
-    )
-
-
-def get_immutable_data_specification_for_attribute(
-    attribute_field_info: AttributeFieldInfo,
-) -> typing.Optional[model.EmbeddedDataSpecification]:
-    if not typing.get_origin(attribute_field_info.field_info.annotation) == tuple:
-        return
-    return get_immutable_data_specification_for_attribute_name(
-        attribute_field_info.name
-    )
-
-
-def get_default_data_specification_for_attribute(
-    attribute_field_info: AttributeFieldInfo,
-    basyx_attribute: typing.Union[
-        NoneType, aas_model.AAS, aas_model.Submodel, aas_model.SubmodelElementCollection
-    ],
-) -> typing.Optional[model.EmbeddedDataSpecification]:
-    default_val = attribute_field_info.field_info.default
-    # Avoid IEC61360 crash on empty/falsy defaults; a default_factory field has no default value.
-    if default_val is None or default_val is PydanticUndefined or default_val == "" or default_val == 0:
-        return None
-    # Convert model instances to a meaningful string (not Python repr)
-    if isinstance(default_val, aas_model.Referable):
-        default_str = default_val.id_short
-    elif isinstance(default_val, (list, tuple, set)):
-        default_str = ", ".join(
-            getattr(v, 'id_short', str(v)) for v in default_val
-        )
-    else:
-        default_str = str(default_val)
-    # Some defaults have empty id_short or produce empty strings — skip those
-    if not default_str or not default_str.strip():
-        return None
-    model_keys = get_model_keys_for_data_specification(
-        basyx_attribute if basyx_attribute is not None else attribute_field_info.name
-    )
-    return model.EmbeddedDataSpecification(
-        data_specification=model.ExternalReference(
-            key=model_keys,
-        ),
-        data_specification_content=model.DataSpecificationIEC61360(
-            preferred_name=model.LangStringSet({"en": "default"}),
-            value=default_str,
-        ),
-    )
-
-
 def get_id_short(
     element: Union[
         aas_model.AAS, aas_model.Submodel, aas_model.SubmodelElementCollection
@@ -460,6 +397,16 @@ def own_id_short(element) -> typing.Optional[str]:
             if isinstance(spec.data_specification_content, model.DataSpecificationIEC61360)
             and spec.data_specification_content.preferred_name.get("en") == "class"}
     return keys.pop() if len(keys) == 1 else None
+
+
+def own_display_name(element) -> typing.Optional[dict]:
+    """An element's display name, without the one a list item is given by its name (``create_submodel_element_list``):
+    that is the item's idShort, not a name of its own."""
+    display_name = get_str_display_name(getattr(element, "display_name", None))
+    in_list = isinstance(getattr(element, "parent", None), model.SubmodelElementList)
+    if display_name is not None and in_list and display_name == {"en": own_id_short(element)}:
+        return None
+    return display_name
 
 
 def strip_temp_id_short_attributes(store) -> None:

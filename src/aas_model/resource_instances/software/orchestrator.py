@@ -13,18 +13,18 @@ from aas_pydantic.submodel_templates.capability_description import (
 )
 
 from aas_model.json_schema_aid import datapoint_from_schema, load_schema, populate_datapoint
-from aas_model.constants import BASE_URL, BROKER, CSSX, SCHEMA_BASE, SITE, STATE_OPERATIONAL
+from aas_model.constants import BASE_URL, BROKER, CSSX, SCHEMA_BASE, SITE
 from aas_model.resource_instances.site import SITE_ADDRESS
 from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
 from aas_model.resource_template.resources import MqttSoftwareResource
-from aas_model.resource_template.operational import COMMAND_RESPONSE_SCHEMA, COMMAND_RESPONSE_SCHEMA_URL
+from aas_model.resource_template.operational import COMMAND_RESPONSE_SCHEMA, COMMAND_RESPONSE_SCHEMA_URL, station_state
 from aas_model.resource_template.references import (
-    MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, skill_ref, variable_ref,
+    MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, series_segment_ref,
+    skill_ref,
 )
 from aas_model.submodel_templates.control_component_instance import (
     ExtendedSkill, SkillOperation, SkillInterfaceRelationship,
 )
-from aas_model.submodel_templates.variables import VariableProp
 from aas_model.submodel_templates import DmpResponseSink, DmpResponseSource
 from aas_model.submodel_templates.aimc import DmpMappingConfiguration
 from aas_model.submodel_templates.aid import (
@@ -136,9 +136,7 @@ def orchestrator() -> MqttSoftwareResource:
     }
 
     state_url = f"{SCHEMA_BASE}/state.schema.json"
-    resource.variables.variable["PackMLState"] = VariableProp(
-        id_short="PackMLState", semantic_id=STATE_OPERATIONAL
-    )
+    resource.variables.State = station_state(occupation=False)
     state = datapoint_from_schema(
         load_schema(state_url),
         key="State",
@@ -152,16 +150,16 @@ def orchestrator() -> MqttSoftwareResource:
     # Software doesn't have station ProcessQueue; declare only actual telemetry.
     mappings.append(
         DmpMappingConfiguration(
-            id_short="ObserveState",
+            id_short="StationState",
             DefaultPollingInterval="0.0",
-            Transformation="function aimc_main(sources) return { PackMLState = sources.State.State } end",
+            Transformation="function aimc_main(sources) return { Live = { PackMLState = sources.State.State } } end",
             Sources=[
                 SourcesItem(
                     Source=SourceReference(value=affordance_ref(MQTT_INTERFACE, "properties", "State")),
                     SourceId="State",
                 )
             ],
-            Sinks=[SinksItem(Sink=SinkReference(value=variable_ref("PackMLState")), SinkId="PackMLState")],
+            Sinks=[SinksItem(Sink=SinkReference(value=series_segment_ref("State", "Station")), SinkId="Live")],
         )
     )
 

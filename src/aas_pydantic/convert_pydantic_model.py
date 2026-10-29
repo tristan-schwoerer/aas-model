@@ -102,14 +102,13 @@ def convert_model_to_submodel(
 ) -> Optional[model.Submodel]:
     if not model_submodel:
         return
-    submodel_elements, data_specifications = _children(model_submodel)
+    submodel_elements = _children(model_submodel)
     return model.Submodel(
         id_short=get_id_short(model_submodel),
         id_=model.Identifier(model_submodel.id),
         description=convert_util.get_basyx_description_from_model(model_submodel),
         display_name=convert_util.get_basyx_display_name_from_model(model_submodel),
-        embedded_data_specifications=convert_util.get_data_specification_for_model(model_submodel)
-        + data_specifications,
+        embedded_data_specifications=convert_util.get_data_specification_for_model(model_submodel),
         semantic_id=get_semantic_id(model_submodel),
         qualifier=_make_qualifiers(model_submodel.qualifiers),
         supplemental_semantic_id=[_make_external_reference(s) for s in model_submodel.supplemental_semantic_ids],
@@ -118,10 +117,10 @@ def convert_model_to_submodel(
     )
 
 
-def _children(container, skip: tuple[str, ...] = ()) -> tuple[list, list]:
-    """The BaSyx elements of a container's fields (a map's entries inline) and the markers naming the attribute,
-    immutability and default of each field."""
-    elements, data_specifications = [], []
+def _children(container, skip: tuple[str, ...] = ()) -> list:
+    """The BaSyx elements of a container's fields, a map's entries inline. Each element carries its own class
+    marker; the container says nothing about them."""
+    elements = []
     for attribute_info in get_attribute_infos(container):
         if attribute_info.name in skip:
             continue
@@ -132,14 +131,9 @@ def _children(container, skip: tuple[str, ...] = ()) -> tuple[list, list]:
             _aas_attribute_name(attribute_info), _named_by_field(attribute_info),
             field_info=attribute_info.field_info,
         )
-        markers = [convert_util.get_data_specification_for_attribute(attribute_info, element),
-                   convert_util.get_immutable_data_specification_for_attribute(attribute_info)]
-        if not attribute_info.field_info.is_required():
-            markers.append(convert_util.get_default_data_specification_for_attribute(attribute_info, element))
-        data_specifications.extend(marker for marker in markers if marker)
         if element is not None:
             elements.append(element)
-    return elements, data_specifications
+    return elements
 
 
 def _make_basyx_reference(ref: aas_model.Reference) -> model.Reference:
@@ -231,7 +225,7 @@ def create_submodel_element(
             else model.EntityType.CO_MANAGED_ENTITY
         )
         # Named-field style: an Entity's fields (and maps) are its statements.
-        statements, data_specifications = _children(attribute_value, skip=("entity_type", "global_asset_id"))
+        statements = _children(attribute_value, skip=("entity_type", "global_asset_id"))
         global_asset_id = attribute_value.global_asset_id or None
         if (
             entity_type is model.EntityType.SELF_MANAGED_ENTITY
@@ -248,8 +242,7 @@ def create_submodel_element(
             global_asset_id=global_asset_id,
             semantic_id=sid or get_semantic_id(attribute_value),
             qualifier=q, supplemental_semantic_id=s, description=d, display_name=dn,
-            embedded_data_specifications=convert_util.get_data_specification_for_model(attribute_value)
-            + data_specifications,
+            embedded_data_specifications=convert_util.get_data_specification_for_model(attribute_value),
         )
 
     if isinstance(attribute_value, aas_model.SubmodelElementList):
@@ -438,13 +431,13 @@ def _inline_dict_children(
 def create_submodel_element_collection(
     model_sec: aas_model.SubmodelElementCollection,
 ) -> model.SubmodelElementCollection:
-    value, data_specifications = _children(model_sec)
+    value = _children(model_sec)
     return model.SubmodelElementCollection(
         id_short=get_id_short(model_sec),
         value=value,
         description=convert_util.get_basyx_description_from_model(model_sec),
         display_name=convert_util.get_basyx_display_name_from_model(model_sec),
-        embedded_data_specifications=convert_util.get_data_specification_for_model(model_sec) + data_specifications,
+        embedded_data_specifications=convert_util.get_data_specification_for_model(model_sec),
         semantic_id=get_semantic_id(model_sec),
     )
 
@@ -500,8 +493,11 @@ def create_submodel_element_list(
                 raise ValueError(
                     f"Submodel element collection with id {submodel_element.id_short} already exists in list"
                 )
-            # Its name stays in its class marker (``own_id_short``), so names must be unique in the list.
+            # Its name stays in its class marker (``own_id_short``), so names must be unique in the list. It is
+            # shown by its name: its display name, unless it has one of its own.
             submodel_element_ids.update({submodel_element.id_short: None})
+            if not submodel_element.display_name:
+                submodel_element.display_name = model.MultiLanguageNameType({"en": submodel_element.id_short})
         # AASd-120: items of a SubmodelElementList must not carry an id_short.
         submodel_element.id_short = None
         submodel_elements.append(submodel_element)

@@ -53,9 +53,8 @@ def operation_variable_ref(skill: str, variable: str, element_type: str = "Prope
 
 
 def variable_ref(*path: str) -> ModelReference:
-    """A Property in Variables, e.g. ``.../Variables/PackMLState``, or a member of a variable group
-    (``variable_ref("Location", "x")``). The key types are what the Variables submodel stores: the resolver
-    checks reference key types against the repository."""
+    """A Property in a group of Variables, e.g. ``variable_ref("Measurements", "Image")``. The key types are what
+    the Variables submodel stores: the resolver checks reference key types against the repository."""
     return ModelReference(key=(Key(type_="Submodel", value=VARIABLES_SUBMODEL_ID), *_collections(*path[:-1]),
                                Key(type_="Property", value=path[-1])))
 

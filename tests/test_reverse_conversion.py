@@ -64,3 +64,17 @@ def test_a_list_item_is_named_by_its_class_marker():
 def test_a_store_without_the_aas_is_an_error():
     with pytest.raises(ValueError, match="expected one AAS"):
         convert_store_to_model(model.DictIdentifiableStore(), Resource)
+
+
+def test_a_named_list_item_is_shown_by_its_name_and_read_back_without_it():
+    resource = RESOURCE_FACTORIES["syntegonStoppering"]()
+    document = json.loads(_published(resource))
+    aimc = next(s for s in document["submodels"] if s["idShort"] == "AssetInterfacesMappingConfiguration")
+    [mappings] = aimc["submodelElements"]
+    names = [m.id_short for m in resource.asset_interfaces_mapping_configuration.MappingConfigurations.value]
+    assert [item["displayName"] for item in mappings["value"]] == [[{"language": "en", "text": n}] for n in names]
+    assert all("idShort" not in item for item in mappings["value"])
+    restored = convert_store_to_model(read_aas_json_file(io.StringIO(json.dumps(document)), failsafe=False),
+                                      type(resource))
+    assert {m.display_name for m in restored.asset_interfaces_mapping_configuration.MappingConfigurations.value} \
+        == {None}

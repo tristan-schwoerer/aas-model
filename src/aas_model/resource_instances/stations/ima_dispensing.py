@@ -14,7 +14,7 @@ from aas_model.resource_template.resources import DispensingStation
 from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import SourcesItem, SinksItem
 from aas_model.resource_template.references import (
     OPCUA_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, series_segment_ref,
-    skill_ref, variable_ref,
+    skill_ref,
 )
 from aas_model.submodel_templates.control_component_instance import (
     ExtendedSkill, SkillOperation, SkillInterfaceRelationship, OptionalVariable,
@@ -22,7 +22,7 @@ from aas_model.submodel_templates.control_component_instance import (
 from aas_model.submodel_templates import AimcMappingConfiguration, DmpResponseSink, DmpResponseSource
 from aas_pydantic.submodel_templates.capability_description import CapabilityRelations, CapabilityRealizedBy
 from aas_model.json_schema_aid import datapoint_from_schema, load_schema
-from aas_model.submodel_templates.variables import MeasurementsGroup, VariableProp
+from aas_model.submodel_templates.variables import MeasurementsGroup
 from aas_model.submodel_templates.aid import DmpActionInput, DmpActionOutput, DmpForm, OpcuaAction, OpcuaActionForm
 from aas_pydantic.submodel_templates.asset_interfaces_description import Title
 from aas_model.submodel_templates.time_series import (
@@ -160,25 +160,7 @@ def ima_dispensing() -> DispensingStation:
         readOnly="true",
         forms=DmpForm(href=f"/?id={f'{OPCUA_STATION}.Weight'}"),
     )
-    resource.variables.variable["Weight"] = VariableProp(
-        id_short="Weight", value_type="xs:double", value="0.0", supplemental_semantic_ids=[f"{CSSX}#Weight"]
-    )
-    mappings.append(
-        AimcMappingConfiguration(
-            id_short="ObserveWeight",
-            DefaultPollingInterval="0.0",
-            Sources=[
-                SourcesItem(
-                    Source=affordance_ref(OPCUA_INTERFACE, "properties", "Weight"),
-                    SourceId="Weight",
-                    PollingInterval="0.1",
-                )
-            ],
-            Sinks=[SinksItem(Sink=variable_ref("Weight"), SinkId="Weight")],
-            Transformation="function aimc_main(sources) return { Weight = sources.Weight } end",
-        )
-    )
-    # The weight's history: the same reading, one row per sample into Variables/Measurements/Weight.
+    # One row per sample into Variables/Measurements/Weight.
     resource.variables.Measurements = MeasurementsGroup(value={"Weight": TimeSeriesCollection(
         Metadata=TimeSeriesMetadata(Name=Name(value={"en": "Dispensed weight"}), Record=TimeSeriesRecord(field={
             "Weight": RecordField(value_type="xs:double", supplemental_semantic_ids=[f"{CSSX}#Weight"],
@@ -190,7 +172,7 @@ def ima_dispensing() -> DispensingStation:
     )})
     mappings.append(
         AimcMappingConfiguration(
-            id_short="WeightHistory",
+            id_short="Weight",
             DefaultPollingInterval="0.0",
             Sources=[
                 SourcesItem(

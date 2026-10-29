@@ -13,9 +13,9 @@ Halt only invokes (``CMD/Halt`` is not answered, ``Station.Halt`` has no
 OutputArguments). Occupy and Release answer with the commandResponse; their
 mappings name it as ResponseSource and the Operation as ResponseSink.
 
-History: ``Variables/State/Station`` records the PackML state over time
-(measurement ``station_state``), written by a mapping of its own beside the one
-that keeps the AAS Properties current, so a stack without InfluxDB still runs.
+State: ``Variables/State/Station`` records the PackML state and the process
+queue over time (measurement ``station_state``); the AAS holds the series, not
+the current value.
 ``Variables/Log/<skill>`` records every Occupy and Release call (measurement
 ``operation_<skill>``: outcome, duration and the Operation's variables, also
 for failed calls); the skill's response mapping writes it. Halt answers
@@ -46,7 +46,7 @@ from aas_model.submodel_templates.control_component_instance import (
     ExtendedSkill, ExtendedSkills, ResourceControlComponentInstance, ResourceEndpoints, SkillInterfaceRelationship,
     SkillOperation,
 )
-from aas_model.submodel_templates.variables import LogGroup, StateGroup, VariableEntry, VariableProp, Variables
+from aas_model.submodel_templates.variables import LogGroup, StateGroup, Variables
 from aas_pydantic.submodel_templates.time_series import Name
 from aas_model.submodel_templates.time_series import (
     DmpLinkedSegment, InfluxDb2Target, RecordField, RecordReference, TimeSeriesCollection, TimeSeriesMetadata,
@@ -54,7 +54,7 @@ from aas_model.submodel_templates.time_series import (
 )
 from aas_model.resource_template.references import (
     MQTT_INTERFACE, OPCUA_INTERFACE, action_member_ref, affordance_ref, operation_ref, operation_variable_ref,
-    series_segment_ref, skill_ref, variable_ref,
+    series_segment_ref, skill_ref,
 )
 from aas_model.json_schema_aid import datapoint_from_schema, load_schema
 from aas_pydantic.aas_model import AasIdString
@@ -84,37 +84,32 @@ COMMAND_RESPONSE_SCHEMA = load_schema(COMMAND_RESPONSE_SCHEMA_URL)
 STATION_STATE_SCHEMA = load_schema(STATION_STATE_SCHEMA_URL)
 
 
+def station_state(occupation: bool = True) -> StateGroup:
+    """``Variables/State/Station``: the PackML state over time and, for a device that is occupied, its process
+    queue (measurement ``station_state``)."""
+    field = {"PackMLState": RecordField(value_type="xs:string", supplemental_semantic_ids=[STATE_OPERATIONAL])}
+    if occupation:
+        field["OccupationState"] = RecordField(value_type="xs:string", supplemental_semantic_ids=[STATE_OCCUPIED],
+                                               description="The process queue as JSON array text")
+    return StateGroup(value={"Station": TimeSeriesCollection(
+        Metadata=TimeSeriesMetadata(Name=Name(value={"en": "Station state"}), Record=TimeSeriesRecord(field=field)),
+        Segments=TimeSeriesSegments(LinkedSegment={
+            "Live": DmpLinkedSegment(InfluxDb2Target=InfluxDb2Target(Measurement="station_state")),
+        }),
+    )})
+
+
 class OperationalVariables(Variables):
-    """A station's Variables: the PackML state as Properties (kept current by the state mapping), its history,
-    and the logs of the skills that answer.
+    """A station's Variables: the history of its PackML state and the logs of the skills that answer.
 
     The series are added unless authored, not class defaults: a class default is recorded in the AAS, and the
     resource restored from JSON holds a plain Variables without it."""
     id_short: AasIdString = "Variables"
-    variable: dict[str, VariableEntry] = {
-        "PackMLState": VariableProp(
-            id_short="PackMLState", value="",
-            supplemental_semantic_ids=[STATE_OPERATIONAL],
-        ),
-        "OccupationState": VariableProp(
-            id_short="OccupationState", value="",
-            supplemental_semantic_ids=[STATE_OCCUPIED],
-        ),
-    }
 
     @model_validator(mode="after")
     def _series_follow_from_the_station(self):
         if self.State is None:
-            self.State = StateGroup(value={"Station": TimeSeriesCollection(
-                Metadata=TimeSeriesMetadata(Name=Name(value={"en": "Station state"}), Record=TimeSeriesRecord(field={
-                    "PackMLState": RecordField(value_type="xs:string", supplemental_semantic_ids=[STATE_OPERATIONAL]),
-                    "OccupationState": RecordField(value_type="xs:string", supplemental_semantic_ids=[STATE_OCCUPIED],
-                                                   description="The process queue as JSON array text"),
-                })),
-                Segments=TimeSeriesSegments(LinkedSegment={
-                    "Live": DmpLinkedSegment(InfluxDb2Target=InfluxDb2Target(Measurement="station_state")),
-                }),
-            )})
+            self.State = station_state()
         # A call's outcome and duration next to the Operation itself, referenced: its input, InOut and output
         # variables are fields (Operation.Uuid) with their valueTypes and follow its definition.
         if self.Log is None:
@@ -299,19 +294,9 @@ end
 """
 
 
-# The occupation queue is written as JSON array text: the variable is a string
-# Property, and an empty Lua table would not encode as an array.
+# One row into Variables/State/Station. The occupation queue is written as JSON array text: the field is a
+# string, and an empty Lua table would not encode as an array.
 _STATE_TRANSFORMATION = """function aimc_main(sources)
-    local queue = {queue} or {{}}
-    return {{
-        PackMLState = {state},
-        OccupationState = (#queue == 0) and "[]" or json.encode(queue),
-    }}
-end
-"""
-
-
-_HISTORY_TRANSFORMATION = """function aimc_main(sources)
     local queue = {queue} or {{}}
     return {{ Live = {{
         PackMLState = {state},
@@ -321,27 +306,14 @@ end
 """
 
 
-# The PackML state, each into its AAS Property and, by a mapping of its own, as one row into the history
-# Variables/State/Station: a stack without InfluxDB still keeps the Properties current.
-_STATE_SINKS = ("PackMLState", "OccupationState")
-
-
 class OperationalMqttMappings(Aimc):
     MappingConfigurations: AimcMappingConfigurations = AimcMappingConfigurations(value=[
         AimcMappingConfiguration(
-            id_short="MQTT", DefaultPollingInterval="0.0",
-            Sources=[SourcesItem(SourceId="StationState",
-                                 Source=affordance_ref(MQTT_INTERFACE, "properties", "StationState"))],
-            Sinks=[SinksItem(SinkId=name, Sink=variable_ref(name)) for name in _STATE_SINKS],
-            Transformation=_STATE_TRANSFORMATION.format(
-                queue="sources.StationState.ProcessQueue", state="sources.StationState.State"),
-        ),
-        AimcMappingConfiguration(
-            id_short="MQTTHistory", DefaultPollingInterval="0.0",
+            id_short="StationState", DefaultPollingInterval="0.0",
             Sources=[SourcesItem(SourceId="StationState",
                                  Source=affordance_ref(MQTT_INTERFACE, "properties", "StationState"))],
             Sinks=[SinksItem(SinkId="Live", Sink=series_segment_ref("State", "Station"))],
-            Transformation=_HISTORY_TRANSFORMATION.format(
+            Transformation=_STATE_TRANSFORMATION.format(
                 queue="sources.StationState.ProcessQueue", state="sources.StationState.State"),
         ),
         # Each skill: the Operation's Uuid into its action's command; Occupy and Release also answer.
@@ -372,18 +344,11 @@ class OperationalMqttMappings(Aimc):
 class OperationalOpcuaMappings(Aimc):
     MappingConfigurations: AimcMappingConfigurations = AimcMappingConfigurations(value=[
         AimcMappingConfiguration(
-            id_short="OPCUA", DefaultPollingInterval="0.0",
-            Sources=[SourcesItem(SourceId=name, Source=affordance_ref(OPCUA_INTERFACE, "properties", name))
-                     for name in ("State", "ProcessQueue")],
-            Sinks=[SinksItem(SinkId=name, Sink=variable_ref(name)) for name in _STATE_SINKS],
-            Transformation=_STATE_TRANSFORMATION.format(queue="sources.ProcessQueue", state="sources.State"),
-        ),
-        AimcMappingConfiguration(
-            id_short="OPCUAHistory", DefaultPollingInterval="0.0",
+            id_short="StationState", DefaultPollingInterval="0.0",
             Sources=[SourcesItem(SourceId=name, Source=affordance_ref(OPCUA_INTERFACE, "properties", name))
                      for name in ("State", "ProcessQueue")],
             Sinks=[SinksItem(SinkId="Live", Sink=series_segment_ref("State", "Station"))],
-            Transformation=_HISTORY_TRANSFORMATION.format(queue="sources.ProcessQueue", state="sources.State"),
+            Transformation=_STATE_TRANSFORMATION.format(queue="sources.ProcessQueue", state="sources.State"),
         ),
         # Each skill: the Operation's Uuid into its action's command; Occupy and Release also answer.
         *[AimcMappingConfiguration(

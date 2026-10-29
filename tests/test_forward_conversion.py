@@ -44,22 +44,20 @@ def test_building_a_resource_twice_gives_the_same_aas(name):
     assert json_serialization.object_store_to_json(build_from_model(resource)) == first
 
 
-def test_an_absent_optional_element_has_no_marker():
+def test_an_element_is_marked_with_its_own_class_only():
+    class Inner(SubmodelElementCollection):
+        note: Property = Property(value="x")
+
     class Holder(Submodel):
         present: Property = Property(value="x")
+        inner: Inner = Inner()
+        names: List[Property] = Field(default_factory=list)
         absent: ReferenceElement | None = None
 
-    markers = _markers(convert_model_to_submodel(Holder(id_short="Holder", id="urn:holder")))
-    assert ("present", "attribute", "present") in markers
-    assert not [m for m in markers if m[2] == "absent" and m[1] == "attribute"]
-
-
-def test_a_default_factory_field_has_no_default_marker():
-    class Holder(Submodel):
-        names: List[Property] = Field(default_factory=list)
-
-    holder = Holder(id_short="Holder", id="urn:holder", names=[Property(value="a")])
-    assert not [m for m in _markers(convert_model_to_submodel(holder)) if m[2] == "PydanticUndefined"]
+    submodel = convert_model_to_submodel(Holder(id_short="Holder", id="urn:holder", names=[Property(value="a")]))
+    assert _markers(submodel) == [("urn:holder", "class", "Holder")]
+    assert _markers(_element(submodel, "inner")) == [("inner", "class", "Inner")]
+    assert _markers(_element(submodel, "present")) == []
 
 
 def test_the_shell_names_its_submodels_by_their_id():

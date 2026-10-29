@@ -1,16 +1,17 @@
 """AAU production planner instance."""
 
-from aas_model.constants import BASE_URL, BROKER, CSSX, SCHEMA_BASE, SITE, STATE_OPERATIONAL
+from aas_model.constants import BASE_URL, BROKER, CSSX, SCHEMA_BASE, SITE
 from aas_model.resource_instances.site import SITE_ADDRESS
 from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
 from aas_model.resource_template.resources import MqttSoftwareResource
 from aas_model.resource_template.references import (
-    MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, skill_ref, variable_ref,
+    MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, series_segment_ref,
+    skill_ref,
 )
 from aas_model.submodel_templates.control_component_instance import (
     ExtendedSkill, SkillOperation, SkillInterfaceRelationship, OptionalVariable,
 )
-from aas_model.submodel_templates.variables import VariableProp
+from aas_model.resource_template.operational import station_state
 from aas_model.submodel_templates import DmpResponseSink, DmpResponseSource
 from aas_model.submodel_templates.aimc import DmpMappingConfiguration
 from aas_pydantic import Capability, Property
@@ -69,9 +70,7 @@ def production_planner() -> MqttSoftwareResource:
         forms=MqttForm(href="DATA/State", mqv_retain="true", mqv_qos="0"),
     )
     mqtt.InteractionMetadata.properties.property_name["StationState"] = state
-    resource.variables.variable["PackMLState"] = VariableProp(
-        id_short="PackMLState", semantic_id=STATE_OPERATIONAL
-    )
+    resource.variables.State = station_state(occupation=False)
     plan = ExtendedSkill(
         Disabled="false", interface_reference=affordance_ref(MQTT_INTERFACE, "actions", "Plan")
     )
@@ -121,16 +120,18 @@ end
     resource.asset_interfaces_mapping_configuration.MappingConfigurations.value.append(mapping)
     resource.asset_interfaces_mapping_configuration.MappingConfigurations.value.append(
         DmpMappingConfiguration(
-            id_short="ObserveStationState",
+            id_short="StationState",
             DefaultPollingInterval="0.0",
-            Transformation="function aimc_main(sources) return { PackMLState = sources.StationState.State } end",
+            Transformation=(
+                "function aimc_main(sources) return { Live = { PackMLState = sources.StationState.State } } end"
+            ),
             Sources=[
                 SourcesItem(
                     Source=SourceReference(value=affordance_ref(MQTT_INTERFACE, "properties", "StationState")),
                     SourceId="StationState",
                 )
             ],
-            Sinks=[SinksItem(Sink=SinkReference(value=variable_ref("PackMLState")), SinkId="PackMLState")],
+            Sinks=[SinksItem(Sink=SinkReference(value=series_segment_ref("State", "Station")), SinkId="Live")],
         )
     )
     resource.capability_description.CapabilitySet = {

@@ -14,7 +14,8 @@ from aas_model.submodel_templates.parameters import Position
 from aas_model.resource_template import MqttOperationalStation as Station
 from aas_model.resource_instances.stopperingModule import syntegon_stoppering
 from aas_model.submodel_templates.control_component_instance import ExtendedSkill, SkillOperation
-from aas_model.submodel_templates.variables import VariableProp
+from aas_model.submodel_templates.time_series import TimeSeriesCollection
+from aas_model.submodel_templates.variables import MeasurementsGroup, VariableProp
 from aas_pydantic import Capability, Property, Submodel
 from aas_pydantic.submodel_templates.capability_description import (
     CapabilityContainer, CapabilityDescription, CapabilitySet,
@@ -66,10 +67,10 @@ def test_resource_instance_package_exports_the_module_factory():
 def test_resource_defaults_are_independent_and_their_invocation_urls_resolve_when_built():
     first = Station(id_short="First")
     second = Station(id_short="Second")
-    first.variables.variable["PackMLState"].value = "IDLE"
+    first.variables.State.value.clear()
     first.parameters.parameter["Location"].x.parameter.value = 100.0
 
-    assert second.variables.variable["PackMLState"].value == ""
+    assert set(second.variables.State.value) == {"Station"}
     assert second.parameters.parameter["Location"].x.parameter.value == 480.0
     for resource in (first, second):
         resource = resource.model_copy(deep=True)
@@ -122,7 +123,7 @@ def test_complete_resource_json_round_trip(factory):
     assert restored.parameters.parameter["Location"].x.parameter.value == 123.5
     assert restored.parameters.parameter["Location"].y.parameter.value == 456.5
     assert restored.parameters.parameter["Location"].yaw.parameter.value == 90.0
-    assert isinstance(restored.variables.variable["PackMLState"], VariableProp)
+    assert isinstance(restored.variables.State.value["Station"], TimeSeriesCollection)
     assert isinstance(restored.capability_description, CapabilityDescription)
     halt = restored.control_component_instance.Skills.Skill["Halt"]
     assert isinstance(halt, ExtendedSkill)
@@ -157,15 +158,16 @@ def test_build_from_model_resolves_references_without_mutating_resource():
 
 def test_json_import_and_model_build_preserve_authored_container_structure():
     resource = Resource(id_short="ExactStructure")
-    resource.variables.variable = {"Custom": VariableProp(id_short="Custom", value="READY")}
+    resource.variables.Measurements = MeasurementsGroup(value={"Custom": VariableProp(value="READY")})
     resource.parameters.parameter = {}
     restored = Resource.model_validate_json(resource.model_dump_json())
     store = build_from_model(restored)
     submodels = {obj.id_short: obj for obj in store if isinstance(obj, model.Submodel)}
 
-    assert set(restored.variables.variable) == {"Custom"}
+    assert set(restored.variables.Measurements.value) == {"Custom"}
     assert restored.parameters.parameter == {}
-    assert {element.id_short for element in submodels["Variables"].submodel_element} == {"Custom"}
+    measurements = submodels["Variables"].get_referable("Measurements")
+    assert {element.id_short for element in measurements.value} == {"Custom"}
     assert not submodels["Parameters"].submodel_element
 
 
@@ -181,7 +183,6 @@ def test_pydantic_dict_and_json_loading_build_the_same_aas():
 @pytest.mark.parametrize("source", ["dict", "file"])
 def test_pydantic_loading_preserves_empty_containers_without_default_overlay(source, tmp_path):
     resource = syntegon_stoppering()
-    resource.variables.variable.clear()
     resource.variables.State = None
     resource.variables.Log = None
     resource.parameters.parameter.clear()

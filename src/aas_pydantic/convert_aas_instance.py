@@ -138,9 +138,7 @@ def get_initial_dict_for_model_instantiation(
     model_instantiation_dict = {
         "id_short": convert_util.own_id_short(basyx_model),
         "description": convert_util.get_str_description(basyx_model.description),
-        "display_name": convert_util.get_str_display_name(
-            getattr(basyx_model, "display_name", None)
-        ),
+        "display_name": convert_util.own_display_name(basyx_model),
     }
     if model_instantiation_dict["id_short"] is None:
         del model_instantiation_dict["id_short"]  # an unnamed list item: its class names it
@@ -725,7 +723,7 @@ def convert_submodel_to_model_instance(
     if _is_container_style_model(model_type, "submodel_element"):
         # Container-style Submodel — children populate its ``Dict[str, X]``
         # field(s), grouped back into multi-cardinality maps by concept
-        # semanticId (named-field style: ``Variables.variable``,
+        # semanticId (named-field style: ``StateGroup.value``,
         # ``Parameters.parameter``, or the base ``submodel_element`` fallback).
         dict_model_instantiation.update(
             _container_children_data(sm.submodel_element, model_type)
@@ -919,9 +917,7 @@ def _element_meta(basyx_el: model.SubmodelElement) -> typing.Dict[str, typing.An
     meta = {
         "id_short": convert_util.own_id_short(basyx_el),
         "description": convert_util.get_str_description(basyx_el.description),
-        "display_name": convert_util.get_str_display_name(
-            getattr(basyx_el, "display_name", None)
-        ),
+        "display_name": convert_util.own_display_name(basyx_el),
         "semantic_id": convert_util.get_semantic_id_value_of_model(basyx_el),
         "supplemental_semantic_ids": _element_supplemental_sids(basyx_el),
         "qualifiers": _convert_basyx_qualifiers(

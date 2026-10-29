@@ -14,7 +14,7 @@ from aas_model.resource_instances.site import SITE_ADDRESS
 from aas_model.resource_template.operational import COMMAND_RESPONSE_SCHEMA, COMMAND_RESPONSE_SCHEMA_URL
 from aas_model.resource_template.references import (
     MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, series_segment_ref,
-    skill_ref, variable_ref,
+    skill_ref,
 )
 from aas_model.submodel_templates.hierarchical_structures import ResourceHierarchicalStructures
 from aas_model.resource_template.resources import PlanarShuttle
@@ -27,7 +27,7 @@ from aas_model.submodel_templates.time_series import (
     DmpLinkedSegment, InfluxDb2Target, RecordField, TimeSeriesCollection, TimeSeriesMetadata, TimeSeriesRecord,
     TimeSeriesSegments,
 )
-from aas_model.submodel_templates.variables import MeasurementsGroup, VariableItem, VariableProp
+from aas_model.submodel_templates.variables import MeasurementsGroup
 
 
 def planar_shuttle_1() -> PlanarShuttle:
@@ -147,13 +147,6 @@ end
         readOnly="true",
         forms=MqttForm(href="DATA/Location", mqv_retain="true", mqv_qos="0"),
     )
-    resource.variables.variable.update({
-        "Location": VariableItem(value={
-            axis: VariableProp(value_type="xs:double", value="0.0") for axis in ("x", "y", "yaw")
-        }),
-        "PositionX": VariableProp(value_type="xs:double", value="0.0"),
-        "PositionY": VariableProp(value_type="xs:double", value="0.0"),
-    })
     resource.variables.Measurements = MeasurementsGroup(value={"Location": TimeSeriesCollection(
         Metadata=TimeSeriesMetadata(Name=Name(value={"en": "Shuttle position"}), Record=TimeSeriesRecord(field={
             axis: RecordField(value_type="xs:double") for axis in ("x", "y", "yaw")
@@ -164,22 +157,7 @@ end
     )})
     mappings.extend([
         AimcMappingConfiguration(
-            id_short="ObserveLocation", DefaultPollingInterval="0.0",
-            Sources=[SourcesItem(SourceId="Location", Source=affordance_ref(MQTT_INTERFACE, "properties", "Location"))],
-            Sinks=[
-                SinksItem(SinkId=f"Location_{axis}", Sink=variable_ref("Location", axis)) for axis in ("x", "y", "yaw")
-            ] + [SinksItem(SinkId=variable, Sink=variable_ref(variable)) for variable in ("PositionX", "PositionY")],
-            Transformation="""function aimc_main(sources)
-    local position = sources.Location.Position
-    return {
-        Location_x = position[1], Location_y = position[2], Location_yaw = position[3] or 0.0,
-        PositionX = position[1], PositionY = position[2],
-    }
-end
-""",
-        ),
-        AimcMappingConfiguration(
-            id_short="LocationHistory", DefaultPollingInterval="0.0",
+            id_short="Location", DefaultPollingInterval="0.0",
             Sources=[SourcesItem(SourceId="Location", Source=affordance_ref(MQTT_INTERFACE, "properties", "Location"))],
             Sinks=[SinksItem(SinkId="Live", Sink=series_segment_ref("Measurements", "Location"))],
             Transformation="""function aimc_main(sources)

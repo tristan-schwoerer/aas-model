@@ -35,6 +35,12 @@ CATALOG_NAMES = {
 }
 
 
+def _groups(resource):
+    """The authored groups of a resource's Variables."""
+    variables = resource.variables
+    return filter(None, (variables.State, variables.Measurements, variables.Log))
+
+
 def test_catalog_covers_every_legacy_resource():
     assert set(RESOURCE_FACTORIES) == CATALOG_NAMES
     identities = [factory().id for factory in RESOURCE_FACTORIES.values()]
@@ -66,7 +72,8 @@ def test_each_factory_returns_independent_defaults(name):
     second = RESOURCE_FACTORIES[name]()
     before = second.model_dump_json()
     first.parameters.parameter.clear()
-    first.variables.variable.clear()
+    for group in _groups(first):
+        group.value.clear()
     first.control_component_instance.Skills.Skill.clear()
     first.asset_interfaces_description.InterfaceTemplateForMQTT.clear()
     first.asset_interfaces_description.InterfaceTemplateForOPCUA.clear()
@@ -104,7 +111,8 @@ def test_resource_types_have_coherent_defaults_and_preserve_empty_imports(resour
     resource.control_component_instance.Skills.Skill.clear()
     resource.asset_interfaces_description.InterfaceTemplateForMQTT.clear()
     resource.asset_interfaces_description.InterfaceTemplateForOPCUA.clear()
-    resource.variables.variable.clear()
+    for group in _groups(resource):
+        group.value.clear()
     resource.asset_interfaces_mapping_configuration.MappingConfigurations.value.clear()
     encoded = resource.model_dump_json()
     assert resource_type.model_validate_json(encoded).model_dump_json() == encoded
@@ -202,10 +210,11 @@ def test_motion_schema_operation_and_mapping_describe_the_same_payload():
 def test_extra_station_telemetry_has_variables_and_live_mappings():
     dispensing = RESOURCE_FACTORIES["imaDispensing"]()
     camera = RESOURCE_FACTORIES["omronCamera"]()
-    for resource, names in ((dispensing, {"Weight"}), (camera, {"Image", "QualityResult"})):
-        assert names <= resource.variables.variable.keys()
+    for resource, kinds in ((dispensing, {"Weight": "TimeSeriesCollection"}),
+                            (camera, {"Image": "VariableProp", "QualityResult": "TimeSeriesCollection"})):
+        assert {k: type(v).__name__ for k, v in resource.variables.Measurements.value.items()} == kinds
         mappings = resource.asset_interfaces_mapping_configuration.MappingConfigurations.value
-        assert {f"Observe{name}" for name in names} <= {m.id_short for m in mappings}
+        assert set(kinds) <= {m.id_short for m in mappings}
 
 
 def test_software_commands_include_their_native_payload_inputs():
@@ -213,7 +222,7 @@ def test_software_commands_include_their_native_payload_inputs():
     assert {v.id_short for v in planner.control_component_instance.Skills.Skill["Plan"].operation.input_variable} == {
         "Assets", "Order",
     }
-    assert set(planner.variables.variable) == {"PackMLState"}
+    assert set(planner.variables.State.value) == {"Station"}
     assert "StationState" in planner.asset_interfaces_description.InterfaceTemplateForMQTT[
         "interface_mqtt"
     ].InteractionMetadata.properties.property_name
@@ -225,7 +234,7 @@ def test_software_commands_include_their_native_payload_inputs():
     assert "StationState" not in props
     mappings = orchestrator.asset_interfaces_mapping_configuration.MappingConfigurations.value
     assert "MQTT" not in {m.id_short for m in mappings}
-    assert "ObserveState" in {m.id_short for m in mappings}
+    assert "StationState" in {m.id_short for m in mappings}
     for name in ("Start", "Unsuspend"):
         inputs = orchestrator.control_component_instance.Skills.Skill[name].operation.input_variable
         assert [v.id_short for v in inputs] == ["Process"]
@@ -248,7 +257,7 @@ def test_generic_templates_do_not_claim_instance_specific_operations_or_telemetr
     assert set(interaction.actions.property_name) == {"Halt", "Occupy", "Release"}
     assert set(interaction.properties.property_name) == state
     assert set(resource.control_component_instance.Skills.Skill) == {"Halt", "Occupy", "Release"}
-    assert set(resource.variables.variable) == {"PackMLState", "OccupationState"}
+    assert set(resource.variables.State.value) == {"Station"}
     assert resource.capability_description.CapabilitySet == {}
 
 
@@ -261,7 +270,7 @@ def test_non_station_resources_do_not_inherit_physical_location_or_station_skill
     resource = template(id_short="Generic", **kwargs)
     assert _interfaces(resource) == {}
     assert resource.control_component_instance.Skills.Skill == {}
-    assert resource.variables.variable == {}
+    assert list(_groups(resource)) == []
     assert ("Location" in resource.parameters.parameter) is (template is Station)
 
 
@@ -275,7 +284,7 @@ def test_physical_and_operational_inheritance_is_declared_at_the_right_level():
     assert set(lab.control_component_instance.Skills.Skill) == {
         "Halt", "Occupy", "Release",
     }
-    assert set(lab.variables.variable) == {"PackMLState", "OccupationState"}
+    assert set(lab.variables.State.value) == {"Station"}
     assert isinstance(RESOURCE_FACTORIES["planarShuttle1"](), PhysicalResource)
 
 
@@ -284,7 +293,7 @@ def test_dispensing_type_declares_capability_but_not_vendor_skill_or_weight():
 
     station = DispensingStation(id_short="GenericDispensing")
     assert set(station.capability_description.CapabilitySet["Processing"].CapabilityContainer) == {"Dispensing"}
-    assert "Weight" not in station.variables.variable
+    assert station.variables.Measurements is None
     assert "Dispensing" not in station.control_component_instance.Skills.Skill
     assert _interfaces(station) == {}
     concrete = RESOURCE_FACTORIES["imaDispensing"]()
@@ -318,7 +327,7 @@ def test_dispensing_observes_the_weight_at_a_fast_sampling_interval():
     resource = RESOURCE_FACTORIES["imaDispensing"]()
     weight = next(
         m for m in resource.asset_interfaces_mapping_configuration.MappingConfigurations.value
-        if m.id_short == "ObserveWeight"
+        if m.id_short == "Weight"
     )
     assert weight.Sources.value[0].PollingInterval.value == "0.1"
     prop = _interfaces(resource)["interface_opcua"].InteractionMetadata.properties.property_name["Weight"]
@@ -335,9 +344,9 @@ def test_direct_typed_defaults_are_independent_across_resources():
 
     first = MqttOperationalStation(id_short="First")
     second = MqttOperationalStation(id_short="Second")
-    first.variables.variable["PackMLState"].value = "RUNNING"
+    first.variables.State.value.clear()
     first.control_component_instance.Skills.Skill.clear()
-    assert second.variables.variable["PackMLState"].value != "RUNNING"
+    assert set(second.variables.State.value) == {"Station"}
     assert "Halt" in second.control_component_instance.Skills.Skill
 
     first_capability = StopperingStation(id_short="First")
@@ -381,7 +390,8 @@ def test_factory_authored_skills_resolve_their_invocations_and_empty_imports_sta
     resource.control_component_instance.Skills.Skill.clear()
     resource.asset_interfaces_description.InterfaceTemplateForMQTT.clear()
     resource.asset_interfaces_description.InterfaceTemplateForOPCUA.clear()
-    resource.variables.variable.clear()
+    for group in _groups(resource):
+        group.value.clear()
     resource.asset_interfaces_mapping_configuration.MappingConfigurations.value.clear()
     encoded = resource.model_dump_json()
     assert Resource.model_validate_json(encoded).model_dump_json() == encoded
