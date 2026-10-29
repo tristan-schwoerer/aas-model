@@ -5,10 +5,6 @@ from aas_pydantic.aas_model import (
     Submodel, SubmodelElement, SubmodelElementCollection, SubmodelElementList,
     Cardinality, DynamicSubmodelElementCollection, validate_idta_cardinality,
 )
-from aas_pydantic.convert_aas_instance import (
-    convert_store_to_model,
-    convert_submodel_to_model_instance,
-)
 from aas_pydantic.convert_pydantic_model import (
     convert_model_to_aas,
     convert_model_to_submodel,

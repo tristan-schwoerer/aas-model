@@ -9,7 +9,7 @@ import runpy
 import pytest
 
 from aas_model.json_schema_aid import datapoint_from_schema, schema_from_datapoint
-from aas_json import parse_submodel_dict
+from aas_json import element, value
 from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
 from aas_pydantic import Submodel
 from aas_pydantic.submodel_templates.asset_interfaces_description import (
@@ -68,7 +68,7 @@ def test_aid_12_exposes_new_protocols_and_endpoint_metadata():
 
 
 @pytest.mark.parametrize("protocol", ["CAN", "SNMP"])
-def test_new_protocol_interfaces_survive_aas_roundtrip(protocol):
+def test_new_protocol_interfaces_are_exported(protocol):
     from aas_model.testing import _endpoint
     from aas_pydantic.submodel_templates import asset_interfaces_description as aid
 
@@ -81,13 +81,14 @@ def test_new_protocol_interfaces_survive_aas_roundtrip(protocol):
     interface.EndpointMetadata.protocolVersion = aid.ProtocolVersion(value="1")
     submodel = DmpAssetInterfacesDescription(id_short="AID", **{family: {"native": interface}})
 
-    restored = parse_submodel_dict(_roundtrip(submodel), DmpAssetInterfacesDescription)
+    native = element(_roundtrip(submodel), "native")
 
-    assert getattr(restored, family)["native"].EndpointMetadata.protocolVersion.value == "1"
-    assert getattr(restored, family)["native"].supplemental_semantic_ids == interface.supplemental_semantic_ids
+    assert value(native, "EndpointMetadata", "protocolVersion") == "1"
+    assert [r["keys"][0]["value"] for r in native.get("supplementalSemanticIds", [])] \
+        == interface.supplemental_semantic_ids
 
 
-def test_enum_constraints_survive_latest_template_aas_roundtrip():
+def test_enum_constraints_survive_and_are_exported():
     schema = {
         "type": "object",
         "properties": {
@@ -103,11 +104,12 @@ def test_enum_constraints_survive_latest_template_aas_roundtrip():
         payload: PropertyDefinition
 
     submodel = PayloadSchema(id_short="PayloadSchema", payload=datapoint)
-    restored_datapoint = parse_submodel_dict(_roundtrip(submodel), PayloadSchema).payload
-    for model in (datapoint, restored_datapoint):
-        restored = schema_from_datapoint(model)
-        assert restored["properties"]["state"]["enum"] == ["IDLE", "RUNNING"]
-        assert restored["properties"]["reasons"]["items"]["enum"] == ["WAIT", "READY"]
+    restored = schema_from_datapoint(datapoint)
+    assert restored["properties"]["state"]["enum"] == ["IDLE", "RUNNING"]
+    assert restored["properties"]["reasons"]["items"]["enum"] == ["WAIT", "READY"]
+    payload = element(_roundtrip(submodel), "payload", "properties")
+    assert [m["value"] for m in element(payload, "state", "enum")["value"]] == ["IDLE", "RUNNING"]
+    assert [m["value"] for m in element(payload, "reasons", "items", "enum")["value"]] == ["WAIT", "READY"]
 
 
 @pytest.mark.parametrize("family, obsolete, corrected, minimum_count", [

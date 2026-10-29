@@ -39,16 +39,10 @@ def convert_model_to_aas(
     aas_attribute_infos = get_attribute_infos(model_aas)
     # By id: two submodels may share an idShort, and one submodel may be held by two fields.
     aas_submodels = {}
-    aas_submodel_data_specifications = []
     for attribute_info in aas_attribute_infos:
         if attribute_info.name in _META:
             continue
         submodel = convert_model_to_submodel(model_submodel=attribute_info.value)
-        attribute_data_specification = (
-            convert_util.get_data_specification_for_attribute(attribute_info, submodel)
-        )
-        if attribute_data_specification:
-            aas_submodel_data_specifications.append(attribute_data_specification)
         if submodel and submodel.id not in aas_submodels:
             aas_submodels[submodel.id] = submodel
 
@@ -79,9 +73,6 @@ def convert_model_to_aas(
             model.ModelReference.from_referable(submodel)
             for submodel in aas_submodels.values()
         },
-        "embedded_data_specifications": convert_util.get_data_specification_for_model(
-            model_aas
-        ) + aas_submodel_data_specifications,
     }
     if derived_from:
         aas_kwargs["derived_from"] = model.ModelReference(
@@ -108,7 +99,6 @@ def convert_model_to_submodel(
         id_=model.Identifier(model_submodel.id),
         description=convert_util.get_basyx_description_from_model(model_submodel),
         display_name=convert_util.get_basyx_display_name_from_model(model_submodel),
-        embedded_data_specifications=convert_util.get_data_specification_for_model(model_submodel),
         semantic_id=get_semantic_id(model_submodel),
         qualifier=_make_qualifiers(model_submodel.qualifiers),
         supplemental_semantic_id=[_make_external_reference(s) for s in model_submodel.supplemental_semantic_ids],
@@ -118,8 +108,7 @@ def convert_model_to_submodel(
 
 
 def _children(container, skip: tuple[str, ...] = ()) -> list:
-    """The BaSyx elements of a container's fields, a map's entries inline. Each element carries its own class
-    marker; the container says nothing about them."""
+    """The BaSyx elements of a container's fields, a map's entries inline."""
     elements = []
     for attribute_info in get_attribute_infos(container):
         if attribute_info.name in skip:
@@ -177,7 +166,7 @@ def _aas_attribute_name(attribute_info) -> str:
 
 def _named_by_field(attribute_info):
     """A named field's element under the field's name: the name is its id_short, also for an element assigned
-    after its container was validated (before its markers, which carry the id_short, are made)."""
+    after its container was validated."""
     value, name = attribute_info.value, _aas_attribute_name(attribute_info)
     if isinstance(value, aas_model.Referable) and value.id_short != name:
         return value.model_copy(update={"id_short": name})
@@ -242,7 +231,6 @@ def create_submodel_element(
             global_asset_id=global_asset_id,
             semantic_id=sid or get_semantic_id(attribute_value),
             qualifier=q, supplemental_semantic_id=s, description=d, display_name=dn,
-            embedded_data_specifications=convert_util.get_data_specification_for_model(attribute_value),
         )
 
     if isinstance(attribute_value, aas_model.SubmodelElementList):
@@ -257,7 +245,6 @@ def create_submodel_element(
         if s: sml.supplemental_semantic_id = s
         if d: sml.description = d
         if dn: sml.display_name = dn
-        sml.embedded_data_specifications = convert_util.get_data_specification_for_model(attribute_value)
         return sml
 
     if isinstance(attribute_value, aas_model.SubmodelElementCollection):
@@ -285,7 +272,6 @@ def create_submodel_element(
     if isinstance(attribute_value, aas_model.Operation):
         q, s, d, dn = _model_metadata(attribute_value)
         operation = create_operation(attribute_name, attribute_value, sid, q, s, d, dn)
-        operation.embedded_data_specifications = convert_util.get_data_specification_for_model(attribute_value)
         return operation
 
     if isinstance(attribute_value, aas_model.File):
@@ -418,8 +404,7 @@ def _inline_dict_children(
             continue
         id_short = _dict_key_to_id_short(key)
         if isinstance(val, aas_model.Referable) and val.id_short != id_short:
-            # Also for an element put into the map after validation, before its
-            # markers (which carry its id_short) are made.
+            # Also for an element put into the map after validation.
             val = val.model_copy(update={"id_short": id_short})
         sme = create_submodel_element(id_short, val, field_info=field_info)
         if sme is not None:
@@ -437,7 +422,6 @@ def create_submodel_element_collection(
         value=value,
         description=convert_util.get_basyx_description_from_model(model_sec),
         display_name=convert_util.get_basyx_display_name_from_model(model_sec),
-        embedded_data_specifications=convert_util.get_data_specification_for_model(model_sec),
         semantic_id=get_semantic_id(model_sec),
     )
 
@@ -493,8 +477,8 @@ def create_submodel_element_list(
                 raise ValueError(
                     f"Submodel element collection with id {submodel_element.id_short} already exists in list"
                 )
-            # Its name stays in its class marker (``own_id_short``), so names must be unique in the list. It is
-            # shown by its name: its display name, unless it has one of its own.
+            # A list item has no idShort (AASd-120): it is shown by its name as its display name, unless it has
+            # one of its own, so names must be unique in the list.
             submodel_element_ids.update({submodel_element.id_short: None})
             if not submodel_element.display_name:
                 submodel_element.display_name = model.MultiLanguageNameType({"en": submodel_element.id_short})

@@ -9,7 +9,6 @@ import json
 from aas_pydantic.convert_pydantic_model import convert_model_to_submodel
 from basyx.aas.adapter.json import AASToJsonEncoder
 
-from aas_json import parse_submodel_dict
 from aas_model.constants import (
     AID_EVENT_DEFINITION, AID_EVENT_CANCELLATION, AID_EVENT_DATA, AID_EVENT_DATA_RESPONSE,
     AID_EVENT_SUBSCRIPTION, AID_OPCUA_EVENT_FIELD, AID_OPCUA_EVENT_TYPE,
@@ -81,15 +80,6 @@ def test_opcua_event_names_notifier_event_type_and_selected_fields():
     path = _child(fields["ToStateId"], "uav_eventField")
     assert (_semantic(path), path["value"]) == (AID_OPCUA_EVENT_FIELD, "0:ToState/0:Id")
     assert "subscription" not in {child["idShort"] for child in event["value"]}
-
-
-def test_opcua_event_round_trips_through_the_typed_model():
-    back = parse_submodel_dict(_serialized(), DmpAssetInterfacesDescription)
-    event = back.InterfaceTemplateForOPCUA["interface_opcua"].InteractionMetadata.events.property_name["Transition"]
-    assert event.uav_eventType.value == "i=2378"
-    fields = event.data.properties.property_name
-    assert {name: (field.uav_eventField.value if field.uav_eventField else None) for name, field in fields.items()} == {
-        "Message": None, "Severity": None, "ToState": "0:ToState", "ToStateId": "0:ToState/0:Id"}
 
 
 def test_opcua_event_terms_use_the_project_namespace():

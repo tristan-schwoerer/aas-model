@@ -1,17 +1,16 @@
 """TD DataSchema terms AID marks EXTERNAL (docs/aid-extension.md §3.6) and the
-form's ``additionalResponses`` (§3.4): built from JSON Schema, exported to AAS
-JSON and parsed back without loss; unrepresentable schemas fail loudly."""
+form's ``additionalResponses`` (§3.4): built from JSON Schema without loss and
+exported to AAS JSON in their AAS shapes; unrepresentable schemas fail loudly."""
 
 from __future__ import annotations
 
 import pytest
 
-from aas_json import parse_submodel_dict
 from aas_model.constants import AID_WOT_ONE_OF, AID_WOT_REQUIRED
 from aas_model.json_schema_aid import datapoint_from_schema, load_schema, schema_from_datapoint, without
 from aas_model.submodel_templates.aid import (
     AdditionalResponse, AdditionalResponseSchema, AdditionalResponseSuccess, AdditionalResponses,
-    DmpActionOutput, DmpAssetInterfacesDescription,
+    DmpActionOutput,
 )
 from aas_model.testing import build_aid, mqtt_interface
 from aas_pydantic.submodel_templates.asset_interfaces_description import ContentType
@@ -40,8 +39,7 @@ def _exported_output(output) -> tuple[dict, DmpActionOutput]:
     interface = mqtt_interface("mqtt://broker:1883/base/", actions={"Start": ("CMD/Start", "DATA/Start")})
     interface.InteractionMetadata.actions.property_name["Start"].output = output
     serialized = _roundtrip(build_aid(mqtt=interface))
-    back = parse_submodel_dict(serialized, DmpAssetInterfacesDescription)
-    return serialized, back.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata.actions.property_name["Start"]
+    return serialized, interface.InteractionMetadata.actions.property_name["Start"]
 
 
 def _find(element, id_short):
@@ -57,7 +55,7 @@ def _find(element, id_short):
     return None
 
 
-def test_every_data_schema_term_survives_export_and_parse():
+def test_every_data_schema_term_survives_and_is_exported():
     serialized, action = _exported_output(datapoint_from_schema(SCHEMA, cls=DmpActionOutput))
     assert schema_from_datapoint(action.output) == SCHEMA
     # the AAS shapes: required and oneOf are lists with their W3C IRIs
@@ -84,7 +82,7 @@ def test_no_required_qualifier_is_written():
     assert "RequiredProperties" not in set(qualifiers(serialized))
 
 
-def test_additional_responses_with_inline_schemas_survive_export_and_parse():
+def test_additional_responses_with_inline_schemas_are_exported():
     interface = mqtt_interface("mqtt://broker:1883/base/", actions={"Start": ("CMD/Start", "DATA/Start")})
     form = interface.InteractionMetadata.actions.property_name["Start"].forms
     error = datapoint_from_schema({"type": "object", "properties": {"Error": {"type": "string"}}, "required": ["Error"]},
@@ -92,12 +90,11 @@ def test_additional_responses_with_inline_schemas_survive_export_and_parse():
     form.additionalResponses = AdditionalResponses(value=[AdditionalResponse(
         id_short="failure", success=AdditionalResponseSuccess(value="false"),
         contentType=ContentType(value="application/json"), schema=error)])
-    back = parse_submodel_dict(_roundtrip(build_aid(mqtt=interface)), DmpAssetInterfacesDescription)
-    [response] = back.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata.actions \
-        .property_name["Start"].forms.additionalResponses.value
-    assert response.success.value == "false"
-    assert response.contentType.value == "application/json"
-    assert schema_from_datapoint(response.schema) == {
+    responses = _find(_roundtrip(build_aid(mqtt=interface)), "additionalResponses")
+    [response] = responses["value"]
+    assert {child["idShort"]: child.get("value") for child in response["value"]
+            if child["idShort"] in ("success", "contentType")} == {"success": "false", "contentType": "application/json"}
+    assert schema_from_datapoint(form.additionalResponses.value[0].schema) == {
         "type": "object", "properties": {"Error": {"type": "string"}}, "required": ["Error"]}
 
 

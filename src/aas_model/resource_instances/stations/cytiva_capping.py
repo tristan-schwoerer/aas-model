@@ -2,8 +2,8 @@
 
 from aas_pydantic import Property
 from aas_model.constants import BASE_URL, BROKER, SITE
-from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_pydantic.submodel_templates.nameplate import ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template import ResourceNameplate
 from aas_pydantic.submodel_templates.hierarchical_structures import EntryNode, Node
 from aas_model.resource_template.operational import (
     OperationalMqttControlComponent, OperationalMqttInterfaces, OperationalMqttMappings, OperationalVariables,
@@ -31,12 +31,11 @@ def cytiva_capping() -> CappingStation:
     resource = CappingStation(
         id_short=identity,
         id=resource_id,
-        nameplate=Nameplate(
+        nameplate=ResourceNameplate(
             URIOfTheProduct=resource_id,
             ManufacturerName=ManufacturerName(value={"en": "Cytiva"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "Cytiva Capping System"}),
             ManufacturerProductType="Cytiva Capping System",
-            AddressInformation=SITE_ADDRESS.model_copy(deep=True),
             # The legacy serial duplicates the Syntegon asset and is unreliable.
             OrderCodeOfManufacturer="",
             YearOfConstruction="2024",

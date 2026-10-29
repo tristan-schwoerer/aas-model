@@ -68,7 +68,7 @@ def test_a_template_is_a_template():
     assert exported.kind is model.ModellingKind.TEMPLATE
     assert (exported.administration.version, exported.administration.revision) == ("1", "1")
     document = _json(exported)
-    assert "embeddedDataSpecifications" not in json.dumps(document)  # no class markers
+    assert "embeddedDataSpecifications" not in json.dumps(document)
     cardinalities = [q["value"] for e in document["submodelElements"] for q in e.get("qualifiers", [])
                      if q["type"] == "SMT/Cardinality"]
     assert cardinalities and all(c in ("One", "ZeroToOne", "ZeroToMany", "OneToMany") for c in cardinalities)

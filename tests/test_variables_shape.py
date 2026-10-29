@@ -13,15 +13,12 @@ from __future__ import annotations
 
 import pytest
 
-from aas_json import parse_submodel_dict
 from aas_model import Resource, build_from_model
 from aas_model.submodel_templates.parameters import ParamProp, ParameterItem, ResourceParameters
 from aas_model.submodel_templates.variables import (
     MeasurementsGroup, VariableItem, VariableProp, Variables,
 )
 
-VAR_SEMANTIC_ID = VariableProp.model_fields["semantic_id"].default
-VAR_ITEM_SEMANTIC_ID = VariableItem.model_fields["semantic_id"].default
 
 
 def _publish(**submodels):
@@ -83,32 +80,6 @@ def test_legacy_single_child_wrapper_is_rejected_loudly():
     silently coerced into an empty Property."""
     with pytest.raises(Exception):
         _variables({"Timer": {"variable": {"value": ""}}})
-
-
-def test_variable_submodel_round_trips_through_rest_json():
-    rest = {
-        "modelType": "Submodel", "id": "urn:sm:Variables", "idShort": "Variables",
-        "submodelElements": [{"modelType": "SubmodelElementCollection", "idShort": "Measurements", "value": [
-            {"modelType": "Property", "idShort": "Image", "valueType": "xs:string",
-             "value": "IDLE",
-             "semanticId": {"type": "ExternalReference", "keys": [
-                 {"type": "GlobalReference", "value": VAR_SEMANTIC_ID}]}},
-            {"modelType": "SubmodelElementCollection", "idShort": "Grouped",
-             "value": [{"modelType": "Property", "idShort": "Inner",
-                        "valueType": "xs:string", "value": "B",
-                        "semanticId": {"type": "ExternalReference", "keys": [
-                            {"type": "GlobalReference", "value": VAR_SEMANTIC_ID}]}}],
-             "semanticId": {"type": "ExternalReference", "keys": [
-                 {"type": "GlobalReference", "value": VAR_ITEM_SEMANTIC_ID}]}},
-        ]}],
-    }
-    back = parse_submodel_dict(rest, Variables)
-    measurements = back.Measurements.value
-    assert {k: type(v).__name__ for k, v in measurements.items()} == {
-        "Image": "VariableProp", "Grouped": "VariableItem"}
-    assert measurements["Image"].value == "IDLE"
-    assert {k: type(v).__name__ for k, v in measurements["Grouped"].value.items()} == {
-        "Inner": "VariableProp"}
 
 
 def test_a_station_holds_its_state_as_a_series_not_as_properties():

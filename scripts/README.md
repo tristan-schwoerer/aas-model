@@ -77,7 +77,7 @@ directory while another integration is preparing its target-model changes.
 submodel class as the AAS submodel template it describes, so our extensions can
 be shared in the format IDTA publishes theirs. Each class becomes
 `templates/<snake_name>.json`, an AAS environment with a Type shell and the
-submodel template (`kind: Template`, no class markers).
+submodel template (`kind: Template`).
 
 ```bash
 python scripts/export_templates.py                                   # the pinned TEMPLATES into templates/

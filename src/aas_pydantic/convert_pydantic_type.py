@@ -13,7 +13,7 @@ The template is what the class would have been generated from (scripts/README.md
   ``SMT/AllowedRange``;
 - a class's base classes are part of it: a template is complete, not a delta to the one it extends.
 
-Templates carry no class markers: they are for readers of the AAS.
+Templates are for readers of the AAS: they carry no Python class names.
 """
 
 from __future__ import annotations

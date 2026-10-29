@@ -5,10 +5,10 @@ from hashlib import sha256
 
 import pytest
 
-from aas_json import parse_submodel_dict
+from aas_json import names
 from aas_model.json_schema_aid import datapoint_from_schema, load_schema, populate_datapoint, schema_from_datapoint
 from aas_model.submodel_templates.aid import (
-    DmpActionInput, DmpActionOutput, DmpAssetInterfacesDescription, DmpProperty, MqttAction, MqttActionForm,
+    DmpActionInput, DmpActionOutput, DmpProperty, MqttAction, MqttActionForm,
     MqttForm,
 )
 from aas_model.testing import build_aid, mqtt_interface
@@ -144,9 +144,9 @@ def test_qualifiers_survive_aas_json_serialization_and_parse():
         )
     )
     document = _roundtrip(aid)
-    restored = parse_submodel_dict(json.loads(json.dumps(document)),
-                                   DmpAssetInterfacesDescription)
-    back = restored.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata.actions.property_name["Send"]
+    assert names(document, "interface_mqtt", "InteractionMetadata", "actions") == ["Send"]
+    interaction = aid.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata
+    back = interaction.actions.property_name["Send"]
     assert schema_from_datapoint(back.input) == {
         "type": "object", "required": ["Uuid"],
         "properties": {"Uuid": {"type": "string"},
@@ -157,7 +157,7 @@ def test_qualifiers_survive_aas_json_serialization_and_parse():
         "type": "object", "required": ["State"],
         "properties": {"State": {"type": "string"}},
     }
-    prop = restored.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata.properties.property_name["Status"]
+    prop = interaction.properties.property_name["Status"]
     # readOnly is a DataSchema term (TD): the observed MQTT property is not writable.
     assert schema_from_datapoint(prop) == {
         "type": "object", "title": "Status", "required": ["Mode"], "readOnly": True,
@@ -165,9 +165,7 @@ def test_qualifiers_survive_aas_json_serialization_and_parse():
     }
 
 
-def test_json_scalar_consts_and_arbitrary_member_names_serialize_and_round_trip():
-    from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
-
+def test_json_scalar_consts_and_arbitrary_member_names_serialize():
     schema = {
         "type": "object",
         "required": ["part,one"],
@@ -198,12 +196,7 @@ def test_json_scalar_consts_and_arbitrary_member_names_serialize_and_round_trip(
     enabled_alias = "member_" + sha256(b"enabled?").hexdigest() + "_1"
     assert f'"idShort": "{part_alias}"' in serialized_text
     assert f'"idShort": "{enabled_alias}"' in serialized_text
-
-    restored = parse_submodel_dict(document, DmpAssetInterfacesDescription)
-    restored_input = restored.InterfaceTemplateForMQTT[
-        "interface_mqtt"
-    ].InteractionMetadata.actions.property_name["Send"].input
-    assert schema_from_datapoint(restored_input) == schema
+    assert schema_from_datapoint(actions.property_name["Send"].input) == schema
 
 
 @pytest.mark.parametrize("bound", [0.5, -1.25])

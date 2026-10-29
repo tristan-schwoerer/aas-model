@@ -6,10 +6,8 @@ from __future__ import annotations
 import json
 
 from aas_pydantic import Property, SubmodelElementCollection, SubmodelElementList
-from aas_pydantic.convert_util import strip_temp_id_short_attributes
 from basyx.aas.adapter.json import json_serialization
 
-from aas_json import parse_submodel_dict
 from aas_model.builder import build_from_model
 from aas_model.resource_instances import RESOURCE_FACTORIES
 from aas_model.submodel_templates.control_component_instance import (
@@ -28,9 +26,7 @@ def is_optional(element) -> bool:
 
 
 def _exported_cci(resource) -> dict:
-    store = build_from_model(resource)
-    strip_temp_id_short_attributes(store)
-    doc = json.loads(json_serialization.object_store_to_json(store))
+    doc = json.loads(json_serialization.object_store_to_json(build_from_model(resource)))
     return next(s for s in doc["submodels"] if s["idShort"] == "ControlComponentInstance")
 
 
@@ -50,7 +46,7 @@ def test_a_variable_is_marked_optional_by_its_qualifier():
     assert not is_optional(Property(id_short="State"))
 
 
-def test_collection_and_list_variables_with_optional_marks_export_and_parse_back():
+def test_collection_and_list_variables_export_with_their_optional_marks():
     resource = RESOURCE_FACTORIES["imaDispensing"]()
     operation = resource.control_component_instance.Skills.Skill["Dispensing"].operation
     operation.output_variable = [*operation.output_variable, Result(id_short="Result"),
@@ -63,14 +59,6 @@ def test_collection_and_list_variables_with_optional_marks_export_and_parse_back
     members = {m["idShort"]: m for m in outputs["Result"]["value"]}
     assert _optional(members["Detail"]) and not _optional(members["State"])
     assert _optional(outputs["Samples"]) and _optional(outputs["Outcome"]) and not _optional(outputs["State"])
-
-    parsed = parse_submodel_dict(cci, type(resource.control_component_instance))
-    back = {v.id_short: v for v in parsed.Skills.Skill["Dispensing"].operation.output_variable}
-    assert isinstance(back["Result"], SubmodelElementCollection)
-    assert isinstance(back["Samples"], SubmodelElementList)
-    assert is_optional(back["Outcome"]) and is_optional(back["Samples"]) and not is_optional(back["State"])
-    # AAS JSON names no collection class: the members come back by idShort, marks included.
-    assert is_optional(back["Result"].value["Detail"]) and not is_optional(back["Result"].value["State"])
 
 
 def test_operation_aimc_uses_explicit_input_and_output_variable_references():

@@ -3,8 +3,8 @@ Stoppering skill, all over MQTT."""
 
 from aas_pydantic import Property
 from aas_model.constants import BASE_URL, BROKER, SITE
-from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_pydantic.submodel_templates.nameplate import ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template import ResourceNameplate
 from aas_pydantic.submodel_templates.hierarchical_structures import EntryNode, Node
 from aas_model.resource_template.operational import (
     COMMAND_RESPONSE_SCHEMA, COMMAND_RESPONSE_SCHEMA_URL, COMMAND_SCHEMA, COMMAND_SCHEMA_URL,
@@ -34,12 +34,11 @@ def syntegon_stoppering() -> StopperingStation:
         id_short=identity,
         id=resource_id,
         specific_asset_ids={"serialNumber": serial},
-        nameplate=Nameplate(
+        nameplate=ResourceNameplate(
             URIOfTheProduct=resource_id,
             ManufacturerName=ManufacturerName(value={"en": "Syntegon Technology GmbH"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "Stoppering System 2024"}),
             ManufacturerProductType="Pharmaceutical Stoppering Station",
-            AddressInformation=SITE_ADDRESS.model_copy(deep=True),
             OrderCodeOfManufacturer=serial,
             SerialNumber=serial,
             YearOfConstruction="2024",

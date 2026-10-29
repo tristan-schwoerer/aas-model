@@ -1,15 +1,10 @@
-"""Tests for aas_model: AAS-JSON -> shared-model reverse parsing (ADR-016).
-
-These lock the management node's parse to the same models the registration
-service authors, using the real BaSyx REST fixtures.
-"""
+"""How the shared models serialize to AAS JSON: the AIMC's DMP additions and the AID's protocol terms."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from aas_json import parse_submodel_dict
+from aas_json import element, value
 from aas_model.submodel_templates import (
     Aimc, AimcMappingConfiguration, DmpEvaluation, DmpResponseSink, DmpResponseSource, DmpSource,
 )
@@ -17,49 +12,13 @@ from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
 from aas_model.resource_template.references import variable_ref
 from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import SinksItem, SourcesItem
 
-HERE = Path(__file__).parent
 
-
-def _load(name: str) -> dict:
-    return json.loads((HERE / name).read_text(encoding="utf-8"))
-
-
-def test_aimc_reverse_parses_to_shared_model():
-    model = parse_submodel_dict(_load("data_aimc.json"), Aimc)
-    assert isinstance(model, Aimc)
-    mcs = model.MappingConfigurations.value
-    assert len(mcs) == 5
-    # The Transformation blob (Lua) is preserved.
-    assert mcs[0].Transformation is not None
-    assert mcs[0].Sources.value and mcs[0].Sinks.value
-
-
-def test_aid_reverse_parses_to_shared_model_with_mqtt_actions():
-    model = parse_submodel_dict(_load("data_aid.json"), DmpAssetInterfacesDescription)
-    assert isinstance(model, DmpAssetInterfacesDescription)
-    assert model.InterfaceTemplateForMQTT["interface_mqtt"] is not None
-    im = model.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata
-    actions = list(im.actions.property_name.keys())
-    props = list(im.properties.property_name.keys())
-    # The registration-service MQTT action extensions round-trip.
-    assert {"Halt", "Occupy", "Release", "Stoppering"} <= set(actions)
-    assert "StationState" in props
-
-
-def test_round_trip_preserves_semantic_id():
-    m = parse_submodel_dict(_load("data_aimc.json"), Aimc)
-    assert m.semantic_id == (
-        "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/Submodel"
-    )
-
-
-def test_aimc_response_sources_and_sinks_round_trip():
+def test_aimc_response_sources_and_sinks_are_exported():
     from aas_model.testing import aimc_ref
     from aas_model.resource_template import ResourceTypeAAS
     from aas_model.submodel_templates import AimcMappingConfigurations
     from aas_model.constants import BASE_URL
     from aas_pydantic.convert_pydantic_model import convert_model_to_aas
-    from aas_pydantic.convert_util import strip_temp_id_short_attributes
     from basyx.aas.adapter.json import json_serialization
 
     action_output = aimc_ref(
@@ -94,17 +53,16 @@ def test_aimc_response_sources_and_sinks_round_trip():
     asset = ResourceTypeAAS(
         id_short="RoundTrip", id=f"{BASE_URL}/aas/RoundTrip", asset_type="RoundTrip",
         asset_interfaces_mapping_configuration=aimc)
-    store = convert_model_to_aas(asset)
-    strip_temp_id_short_attributes(store)
-    doc = json.loads(json_serialization.object_store_to_json(store))
+    doc = json.loads(json_serialization.object_store_to_json(convert_model_to_aas(asset)))
     serialized = next(s for s in doc["submodels"] if s.get("idShort") == "AIMC")
-    back = parse_submodel_dict(serialized, Aimc)
 
-    response_mapping = back.MappingConfigurations.value[0]
-    assert response_mapping.ResponseSources.value[0].SourceId.value == "DeviceState"
-    assert response_mapping.ResponseSources.value[0].Source.value.key[-1].value == "State"
-    assert response_mapping.ResponseSinks.value[0].SinkId.value == "PackMLState"
-    assert response_mapping.ResponseSinks.value[0].Sink.value.key[-1].value == "PackMLState"
+    halt = element(serialized, "MappingConfigurations", "Halt")
+    source = element(halt, "ResponseSources", 0)
+    assert value(source, "SourceId") == "DeviceState"
+    assert value(source, "Source")["keys"][-1]["value"] == "State"
+    sink = element(halt, "ResponseSinks", 0)
+    assert value(sink, "SinkId") == "PackMLState"
+    assert value(sink, "Sink")["keys"][-1]["value"] == "PackMLState"
 
 
 def test_aimc_response_endpoints_are_optional():
@@ -155,16 +113,13 @@ def test_a_sources_evaluation_serializes_inside_the_idta_source():
     from aas_model.resource_template import ResourceTypeAAS
     from aas_model.submodel_templates import Aimc, AimcMappingConfigurations
     from aas_pydantic.convert_pydantic_model import convert_model_to_aas
-    from aas_pydantic.convert_util import strip_temp_id_short_attributes
     from basyx.aas.adapter.json import json_serialization
 
     serialized_mapping = AimcMappingConfiguration(Sources=[mapping.Sources.value[0]], Sinks=mapping.Sinks.value)
     aimc = Aimc(id_short="AIMC", MappingConfigurations=AimcMappingConfigurations(value=[serialized_mapping]))
     asset = ResourceTypeAAS(id_short="EvaluationRoundTrip", id=f"{BASE_URL}/aas/EvaluationRoundTrip",
                             asset_type="EvaluationRoundTrip", asset_interfaces_mapping_configuration=aimc)
-    store = convert_model_to_aas(asset)
-    strip_temp_id_short_attributes(store)
-    doc = json.loads(json_serialization.object_store_to_json(store))
+    doc = json.loads(json_serialization.object_store_to_json(convert_model_to_aas(asset)))
     serialized = next(s for s in doc["submodels"] if s.get("idShort") == "AIMC")
     source = serialized["submodelElements"][0]["value"][0]["value"]
     sources = next(e for e in source if e["idShort"] == "Sources")["value"]
@@ -172,11 +127,6 @@ def test_a_sources_evaluation_serializes_inside_the_idta_source():
     assert evaluation["semanticId"]["keys"][0]["value"] == AIMC_EVALUATION
     assert evaluation["value"] == [next(e for e in evaluation["value"] if e["idShort"] == "Mode")]
     assert evaluation["value"][0]["value"] == "OnChange"
-
-    # parsed back, the Source still carries its Evaluation; a plain IDTA Source stays without one
-    restored = parse_submodel_dict(serialized, Aimc).MappingConfigurations.value[0].Sources.value
-    assert restored[0].Evaluation.Mode.value == "OnChange"
-    assert type(restored[0]).__name__ == "DmpSource"
 
 
 def test_resource_sources_may_carry_an_evaluation():
@@ -204,12 +154,10 @@ def test_resource_sources_may_carry_an_evaluation():
     assert plain.Sources.value[0].Evaluation is None, "an IDTA Source becomes a DmpSource without an Evaluation"
 
 
-def test_protocol_specific_endpoint_and_form_terms_round_trip():
+def test_protocol_specific_endpoint_and_form_terms_are_exported():
     """The AID's own protocol vocabulary (modv_*, uav_*, OPC UA security
-    schemes) on the extended forms and endpoint metadata survives a round
-    trip. The Modbus interface is authored as AID Annex B describes it: the
+    schemes) on the extended forms and endpoint metadata is exported. The Modbus interface is authored as AID Annex B describes it: the
     unit ID in the base, the register address and quantity in the href."""
-    from aas_model.submodel_templates.aid import DmpModbusInterface, DmpOpcuaInterface, ModbusForm
     from aas_model.testing import modbus_interface, opcua_interface
     from aas_pydantic import Property
 
@@ -240,30 +188,21 @@ def test_protocol_specific_endpoint_and_form_terms_round_trip():
     opcua.EndpointMetadata.securityDefinitions.opcua_channel_sc = channel
     aid.InterfaceTemplateForOPCUA["interface_opcua"] = opcua
 
-    # serialize → parse back: the protocol terms survive (they previously
-    # could not even be authored — extra_forbidden on the generic classes)
+    # The protocol terms are exported (they previously could not even be authored — extra_forbidden on the
+    # generic classes).
     doc = _roundtrip(aid)
-    back = parse_submodel_dict(doc, DmpAssetInterfacesDescription)
-
-    mb = back.InterfaceTemplateForMODBUS["interface_modbus"]
-    assert isinstance(mb, DmpModbusInterface)
-    assert mb.EndpointMetadata.modv_mostSignificantByte.value == "false"
-    coil = mb.InteractionMetadata.properties.property_name["Coil1"]
-    assert isinstance(coil.forms, ModbusForm)
-    assert coil.forms.modv_function.value == "writeSingleCoil"
-
-    oc = back.InterfaceTemplateForOPCUA["interface_opcua"]
-    assert isinstance(oc, DmpOpcuaInterface)
-    security = oc.EndpointMetadata.securityDefinitions
-    assert security.opcua_channel_sc.uav_securityMode.value == "SignAndEncrypt"
-    assert security.opcua_channel_sc.uav_securityPolicy.value == "Basic256Sha256"
+    modbus = element(doc, "interface_modbus")
+    assert value(modbus, "EndpointMetadata", "modv_mostSignificantByte") == "false"
+    assert value(modbus, "InteractionMetadata", "properties", "Coil1", "forms", "modv_function") == "writeSingleCoil"
+    channel = element(doc, "interface_opcua", "EndpointMetadata", "securityDefinitions", "opcua_channel_sc")
+    assert value(channel, "uav_securityMode") == "SignAndEncrypt"
+    assert value(channel, "uav_securityPolicy") == "Basic256Sha256"
 
 
 def _roundtrip(aid_model) -> dict:
     import json
 
     from aas_pydantic.convert_pydantic_model import convert_model_to_aas
-    from aas_pydantic.convert_util import strip_temp_id_short_attributes
     from basyx.aas.adapter.json import json_serialization
 
     from aas_model.constants import BASE_URL
@@ -274,8 +213,6 @@ def _roundtrip(aid_model) -> dict:
         asset_type="RoundTrip",
     )
     asset.asset_interfaces_description = aid_model
-    store = convert_model_to_aas(asset)
-    strip_temp_id_short_attributes(store)
-    doc = json.loads(json_serialization.object_store_to_json(store))
+    doc = json.loads(json_serialization.object_store_to_json(convert_model_to_aas(asset)))
     return next(s for s in doc["submodels"]
                 if s.get("idShort") == aid_model.id_short)

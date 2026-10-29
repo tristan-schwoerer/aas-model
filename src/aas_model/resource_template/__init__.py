@@ -12,8 +12,8 @@ The submodel templates these build on (IDTA templates and our extensions) are in
 from .resources import (
     CappingStation, CompositeResource, DispensingStation, HandlingStation, InspectionStation, LoadingStation,
     MqttOperationalStation, MqttSoftwareResource, OpcuaOperationalStation, OperationalResource, PhysicalResource,
-    PlanarShuttle, ProcessingStation, Resource, ResourceTypeAAS, Shuttle, SoftwareResource, Station,
-    StopperingStation, TransportResource, UnloadingStation,
+    PlanarShuttle, ProcessingStation, Resource, ResourceNameplate, ResourceTypeAAS, Shuttle, SoftwareResource,
+    Station, StopperingStation, TransportResource, UnloadingStation,
 )
 from .references import (
     MQTT_INTERFACE, OPCUA_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_ref,
@@ -21,7 +21,7 @@ from .references import (
 )
 
 __all__ = [
-    "Resource", "ResourceTypeAAS", "PhysicalResource", "OperationalResource",
+    "Resource", "ResourceNameplate", "ResourceTypeAAS", "PhysicalResource", "OperationalResource",
     "Station", "MqttOperationalStation", "OpcuaOperationalStation", "ProcessingStation", "HandlingStation",
     "StopperingStation", "CappingStation", "DispensingStation", "LoadingStation", "UnloadingStation",
     "InspectionStation",

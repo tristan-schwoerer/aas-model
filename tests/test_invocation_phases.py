@@ -7,10 +7,8 @@ from __future__ import annotations
 import json
 
 from aas_pydantic.convert_pydantic_model import convert_model_to_aas
-from aas_pydantic.convert_util import strip_temp_id_short_attributes
 from basyx.aas.adapter.json import json_serialization
 
-from aas_json import parse_submodel_dict
 from aas_model.constants import AID_EVENT_DATA, AID_EVENT_DEFINITION, AIMC_RESPONSE_TRANSFORMATION, BASE_URL
 from aas_model.resource_template import ResourceTypeAAS
 from aas_model.submodel_templates import (
@@ -24,9 +22,7 @@ from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration impo
 def _submodels(**submodels) -> dict:
     asset = ResourceTypeAAS(id_short="TwoPhase", id=f"{BASE_URL}/aas/TwoPhase",
                             asset_type="TwoPhase", **submodels)
-    store = convert_model_to_aas(asset)
-    strip_temp_id_short_attributes(store)
-    doc = json.loads(json_serialization.object_store_to_json(store))
+    doc = json.loads(json_serialization.object_store_to_json(convert_model_to_aas(asset)))
     return {submodel["idShort"]: submodel for submodel in doc["submodels"]}
 
 
@@ -54,10 +50,7 @@ def test_mqtt_event_affordance_serializes_as_a_wot_event_with_its_data_schema():
     assert _semantic(_child(finished, "data")) == AID_EVENT_DATA
     assert _child(_child(finished, "data"), "type")["value"] == "object"
     assert "op" not in {child["idShort"] for child in _child(finished, "forms")["value"]}
-
-    back = parse_submodel_dict(serialized, DmpAssetInterfacesDescription)
-    parsed = back.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata.events
-    assert list(parsed.property_name) == ["Finished"]
+    assert [child["idShort"] for child in events["value"]] == ["Finished"]
 
 
 def test_interfaces_without_events_serialize_no_events_container():
@@ -121,10 +114,8 @@ def test_operation_mapping_serializes_command_and_response():
     assert _child(result, "Source")["value"]["keys"][-1]["value"] == "Result"
     assert {child["idShort"] for child in entry["value"]}.isdisjoint(
         {"StatusSources", "StatusTransformation", "StatusTimeout"})
-
-    back = parse_submodel_dict(_serialized_aimc(), Aimc).MappingConfigurations.value[0]
-    assert [item.SourceId.value for item in back.ResponseSources.value] == ["Result"]
-    assert back.ResponseSinks.value[0].SinkId.value == "LastResult"
+    assert [_child(item, "SourceId")["value"] for item in _child(entry, "ResponseSources")["value"]] == ["Result"]
+    assert [_child(item, "SinkId")["value"] for item in _child(entry, "ResponseSinks")["value"]] == ["LastResult"]
 
 
 def test_every_dmp_addition_uses_the_project_namespace():

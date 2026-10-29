@@ -1,9 +1,9 @@
 """Planar table instance."""
 
 from aas_model.constants import BASE_URL, BROKER, CSSX, SITE
-from aas_model.resource_instances.site import SITE_ADDRESS
 from aas_pydantic.submodel_templates.hierarchical_structures import EntryNode, Node
-from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_pydantic.submodel_templates.nameplate import ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template import ResourceNameplate
 from aas_model.resource_template.operational import COMMAND_SCHEMA, COMMAND_SCHEMA_URL, MqttInterfaces
 from aas_model.resource_template.resources import CompositeResource
 from aas_model.resource_template.references import (
@@ -34,12 +34,11 @@ def planar_table() -> CompositeResource:
         id=resource_id,
         asset_type=f"{CSSX}#PlanarTable",
         specific_asset_ids={"serialNumber": serial},
-        nameplate=Nameplate(
+        nameplate=ResourceNameplate(
             URIOfTheProduct=resource_id,
             ManufacturerName=ManufacturerName(value={"en": "Planar Motors"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "Planar Motors Table"}),
             ManufacturerProductType="Planar Motors Table",
-            AddressInformation=SITE_ADDRESS.model_copy(deep=True),
             OrderCodeOfManufacturer=serial,
             SerialNumber=serial,
             YearOfConstruction="2024",

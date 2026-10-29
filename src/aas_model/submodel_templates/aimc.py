@@ -72,7 +72,7 @@ from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration impo
 
 class _NamedByItsId(SubmodelElementCollection):
     """A source or sink, named after its ``SourceId``/``SinkId`` unless named otherwise. Its name stays out of
-    the AAS (AASd-120: list items have none) but names it in the pydantic JSON and in its class markers."""
+    the AAS's idShorts (AASd-120: list items have none): it names it in the pydantic JSON and is its displayName."""
     ID_FIELD: ClassVar[str]
 
     @model_validator(mode="after")

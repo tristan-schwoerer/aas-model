@@ -3,8 +3,8 @@ with a configurable volume and the scale's live weight, all over OPC UA."""
 
 from aas_pydantic import Property
 from aas_model.constants import BASE_URL, CSSX, SCHEMA_BASE
-from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_pydantic.submodel_templates.nameplate import ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template import ResourceNameplate
 from aas_pydantic.submodel_templates.hierarchical_structures import EntryNode, Node
 from aas_model.resource_template.operational import (
     COMMAND_RESPONSE_SCHEMA, COMMAND_RESPONSE_SCHEMA_URL, OPCUA_STATION, OperationalOpcuaControlComponent,
@@ -53,12 +53,11 @@ def ima_dispensing() -> DispensingStation:
         id_short=identity,
         id=resource_id,
         specific_asset_ids={"serialNumber": serial},
-        nameplate=Nameplate(
+        nameplate=ResourceNameplate(
             URIOfTheProduct=resource_id,
             ManufacturerName=ManufacturerName(value={"en": "IMA"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "IMA Dispensing System"}),
             ManufacturerProductType="IMA Dispensing System",
-            AddressInformation=SITE_ADDRESS.model_copy(deep=True),
             OrderCodeOfManufacturer=serial,
             SerialNumber=serial,
             YearOfConstruction="2024",

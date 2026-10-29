@@ -69,27 +69,21 @@ def test_groups_appear_only_when_authored():
     assert set(groups) == {"State", "Measurements", "Log"}
 
 
-def test_series_round_trips_through_rest_json():
-    from aas_json import parse_submodel_dict
-    from basyx.aas.adapter.json import json_serialization
-    import json
+def test_series_is_exported_to_rest_json():
+    from aas_json import element, submodel_json, value
 
     variables = Variables(id_short="Variables", id="urn:sm:Variables",
                           State=StateGroup(value={"Station": _station_state()}))
     asset = Resource(id_short="seriesTestAAS", variables=variables)
-    sm = {s.id_short: s for s in build_from_model(asset)}["Variables"]
-    rest = json.loads(json.dumps(sm, cls=json_serialization.AASToJsonEncoder))
-    back = parse_submodel_dict(rest, Variables)
-    series = back.State.value["Station"]
-    assert type(series).__name__ == "TimeSeriesCollection"
-    fields = series.Metadata.Record.field
-    assert fields["PackMLState"].value_type == "xs:string"
-    assert fields["PackMLState"].supplemental_semantic_ids == [CONCEPT]
-    assert fields["Position"].field["X"].value_type == "xs:double"
-    assert type(fields["Location"]).__name__ == "RecordReference"
-    target = series.Segments.LinkedSegment["Live"].InfluxDb2Target
-    assert target.Measurement.value == "station_state"
-    assert target.Tags.tag["asset"].value == "seriesTestAAS"
+    series = element(submodel_json({s.id_short: s for s in build_from_model(asset)}["Variables"]), "State", "Station")
+    record = element(series, "Metadata", "Record")
+    assert element(record, "PackMLState")["valueType"] == "xs:string"
+    assert [r["keys"][0]["value"] for r in element(record, "PackMLState")["supplementalSemanticIds"]] == [CONCEPT]
+    assert element(record, "Position", "X")["valueType"] == "xs:double"
+    assert element(record, "Location")["modelType"] == "ReferenceElement"
+    target = element(series, "Segments", "Live", "InfluxDb2Target")
+    assert value(target, "Measurement") == "station_state"
+    assert value(target, "Tags", "asset") == "seriesTestAAS"
 
 
 def test_series_is_an_smc_with_the_idta_id_as_supplemental():
@@ -164,10 +158,8 @@ def test_segment_times_are_offset_date_times_in_order(times):
         DmpLinkedSegment(InfluxDb2Target=InfluxDb2Target(Measurement="m"), **times)
 
 
-def test_ranges_files_and_texts_round_trip_through_rest_json():
-    from aas_json import parse_submodel_dict
-    from basyx.aas.adapter.json import json_serialization
-    import json
+def test_ranges_files_and_texts_are_exported_to_rest_json():
+    from aas_json import element, submodel_json
 
     series = _series("Dosing", {
         "Tolerance": RecordRange(value_type="xs:double"),
@@ -176,13 +168,13 @@ def test_ranges_files_and_texts_round_trip_through_rest_json():
     }, InfluxDb2Target(Measurement="dosing"))
     variables = Variables(id_short="Variables", id="urn:sm:Variables", Measurements=MeasurementsGroup(value={"Dosing": series}))
     sm = {s.id_short: s for s in build_from_model(Resource(id_short="seriesTestAAS", variables=variables))}["Variables"]
-    rest = json.loads(json.dumps(sm, cls=json_serialization.AASToJsonEncoder))
-    fields = parse_submodel_dict(rest, Variables).Measurements.value["Dosing"].Metadata.Record.field
-    assert {name: type(field).__name__ for name, field in fields.items()} == {
-        "Tolerance": "RecordRange", "Report": "RecordFile", "Batch": "RecordText"}
-    assert fields["Tolerance"].value_type == "xs:double"
-    assert fields["Report"].content_type == "application/pdf"
-    assert fields["Batch"].value == {"en": "Batch name", "de": "Chargenname"}
+    record = element(submodel_json(sm), "Measurements", "Dosing", "Metadata", "Record")
+    fields = {name: element(record, name) for name in ("Tolerance", "Report", "Batch")}
+    assert {name: field["modelType"] for name, field in fields.items()} == {
+        "Tolerance": "Range", "Report": "File", "Batch": "MultiLanguageProperty"}
+    assert fields["Tolerance"]["valueType"] == "xs:double"
+    assert fields["Report"]["contentType"] == "application/pdf"
+    assert fields["Batch"]["value"] == [{"language": "en", "text": "Batch name"}, {"language": "de", "text": "Chargenname"}]
 
 
 def test_a_record_text_declares_its_languages():

@@ -14,8 +14,8 @@ from aas_pydantic.submodel_templates.capability_description import (
 
 from aas_model.json_schema_aid import datapoint_from_schema, load_schema, populate_datapoint
 from aas_model.constants import BASE_URL, BROKER, CSSX, SCHEMA_BASE, SITE
-from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_pydantic.submodel_templates.nameplate import ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template import ResourceNameplate
 from aas_model.resource_template.resources import MqttSoftwareResource
 from aas_model.resource_template.operational import COMMAND_RESPONSE_SCHEMA, COMMAND_RESPONSE_SCHEMA_URL, station_state
 from aas_model.resource_template.references import (
@@ -48,12 +48,11 @@ def orchestrator() -> MqttSoftwareResource:
     resource = MqttSoftwareResource(
         id_short=identity, id=f"{BASE_URL}/aas/{identity}",
         asset_type=f"{CSSX}#Orchestrator", specific_asset_ids={"serialNumber": serial},
-        nameplate=Nameplate(
+        nameplate=ResourceNameplate(
             URIOfTheProduct=f"{BASE_URL}/aas/{identity}",
             ManufacturerName=ManufacturerName(value={"en": "Aalborg University"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "AAU Orchestrator"}),
             ManufacturerProductType="AAU Orchestrator",
-            AddressInformation=SITE_ADDRESS.model_copy(deep=True),
             OrderCodeOfManufacturer=serial,
             SerialNumber=serial, YearOfConstruction="2024",
             CountryOfOrigin="DK",

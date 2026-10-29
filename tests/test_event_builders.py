@@ -9,7 +9,6 @@ from aas_pydantic.convert_pydantic_model import convert_model_to_submodel
 from aas_pydantic.submodel_templates.asset_interfaces_description import ContentType
 from basyx.aas.adapter.json import AASToJsonEncoder
 
-from aas_json import parse_submodel_dict
 from aas_model.constants import (
     AID_EVENT_DATA, AID_EVENT_DEFINITION, AID_OPCUA_EVENT_FIELD, AID_OPCUA_EVENT_TYPE,
 )
@@ -99,7 +98,3 @@ def test_opcua_event_selects_fields_and_filters_by_event_type():
     path = _child(_child(fields, "ToStateId"), "uav_eventField")
     assert (_semantic(path), path["value"]) == (AID_OPCUA_EVENT_FIELD, "0:ToState/0:Id")
     assert "uav_eventField" not in {child["idShort"] for child in _child(fields, "Message")["value"]}
-
-    back = parse_submodel_dict(serialized, DmpAssetInterfacesDescription)
-    parsed = back.InterfaceTemplateForOPCUA["interface_opcua"].InteractionMetadata.events.property_name["Transition"]
-    assert parsed.data.properties.property_name["ToStateId"].uav_eventField.value == "0:ToState/0:Id"

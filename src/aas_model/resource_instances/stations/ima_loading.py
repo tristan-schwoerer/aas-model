@@ -2,8 +2,8 @@
 
 from aas_pydantic import Property
 from aas_model.constants import BASE_URL, BROKER, SITE
-from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_pydantic.submodel_templates.nameplate import ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template import ResourceNameplate
 from aas_pydantic.submodel_templates.hierarchical_structures import EntryNode, Node
 from aas_model.resource_template.operational import (
     OperationalMqttControlComponent, OperationalMqttInterfaces, OperationalMqttMappings, OperationalVariables,
@@ -33,12 +33,11 @@ def ima_loading() -> LoadingStation:
         id_short=identity,
         id=resource_id,
         specific_asset_ids={"serialNumber": serial},
-        nameplate=Nameplate(
+        nameplate=ResourceNameplate(
             URIOfTheProduct=resource_id,
             ManufacturerName=ManufacturerName(value={"en": "IMA"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "IMA Loading System"}),
             ManufacturerProductType="IMA Loading System",
-            AddressInformation=SITE_ADDRESS.model_copy(deep=True),
             OrderCodeOfManufacturer=serial,
             SerialNumber=serial,
             YearOfConstruction="2024",

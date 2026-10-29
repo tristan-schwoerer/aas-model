@@ -17,8 +17,8 @@ from aas_pydantic.submodel_templates.capability_description import (
 )
 from aas_pydantic.submodel_templates.hierarchical_structures import HierarchicalStructures
 from aas_pydantic.submodel_templates.nameplate import (
-    AddressInformation, CityTown, ManufacturerName, ManufacturerProductDesignation, Nameplate, NationalCode,
-    OrderCodeOfManufacturer, Street, URIOfTheProduct, Zipcode,
+    AddressInformation, AddressInformation_t, CityTown, ManufacturerName, ManufacturerProductDesignation, Nameplate,
+    NationalCode, OrderCodeOfManufacturer, Street, URIOfTheProduct, Zipcode,
 )
 
 from aas_model.constants import BASE_URL, CSSX
@@ -32,6 +32,18 @@ from aas_model.resource_template.operational import (
     MqttInterfaces, OperationalMqttControlComponent, OperationalMqttInterfaces, OperationalMqttMappings,
     OperationalOpcuaControlComponent, OperationalOpcuaInterfaces, OperationalOpcuaMappings, OperationalVariables,
 )
+
+
+# ── Nameplate ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+class ResourceNameplate(Nameplate):
+    """A resource's Nameplate: the lab's address unless the instance names its manufacturer's."""
+    AddressInformation: AddressInformation_t = AddressInformation(
+        Street=Street(value={"en": "Fibigerstr\u00e6de 14"}),
+        Zipcode=Zipcode(value={"en": "9220"}),
+        CityTown=CityTown(value={"en": "Aalborg \u00d8st"}),
+        NationalCode=NationalCode(value={"en": "DK"}),
+    )
 
 
 # ── Resource ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -54,17 +66,11 @@ class Resource(AAS):
     derived_from: str = f"{BASE_URL}/aas/templates/resource"
 
     # ── Nameplate ─────────────────────────────────────────────────────────
-    nameplate: Nameplate = Nameplate(
+    nameplate: Nameplate = ResourceNameplate(
         id_short="Nameplate",
         URIOfTheProduct=URIOfTheProduct(value="https://smartproductionlab.aau.dk/product/1"),
         ManufacturerName=ManufacturerName(value={"en": "Not specified"}),
         ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "Resource"}),
-        AddressInformation=AddressInformation(
-            Street=Street(value={"en": "Not specified"}),
-            Zipcode=Zipcode(value={"en": "Not specified"}),
-            CityTown=CityTown(value={"en": "Not specified"}),
-            NationalCode=NationalCode(value={"en": "Not specified"}),
-        ),
         OrderCodeOfManufacturer=OrderCodeOfManufacturer(value=""),
     )
 

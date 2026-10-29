@@ -1,7 +1,6 @@
 """Python authoring -> Resource config JSON -> BaSyx AAS."""
 
 import json
-import re
 
 import pytest
 from basyx.aas import model
@@ -12,7 +11,7 @@ from aas_model import Resource, ResourceTypeAAS, build_from_model, inject_ids
 from aas_model.constants import BASE_URL
 from aas_model.submodel_templates.parameters import Position
 from aas_model.resource_template import MqttOperationalStation as Station
-from aas_model.resource_instances.stopperingModule import syntegon_stoppering
+from aas_model.resource_instances import syntegon_stoppering
 from aas_model.submodel_templates.control_component_instance import ExtendedSkill, SkillOperation
 from aas_model.submodel_templates.time_series import TimeSeriesCollection
 from aas_model.submodel_templates.variables import MeasurementsGroup, VariableProp
@@ -20,25 +19,14 @@ from aas_pydantic import Capability, Property, Submodel
 from aas_pydantic.submodel_templates.capability_description import (
     CapabilityContainer, CapabilityDescription, CapabilitySet,
 )
-from aas_pydantic.convert_util import strip_temp_id_short_attributes
-from aas_model.constants import BASE_URL
 from aas_model.invocation_authoring import operation_path
 
 
 def _document(store):
-    strip_temp_id_short_attributes(store)
     document = json.loads(json_serialization.object_store_to_json(store))
-    # Registration imports the base Resource schema, intentionally erasing the
-    # Python subclass name stored in authoring-only IEC 61360 metadata.
-    for referable in (*document.get("assetAdministrationShells", []), *document.get("submodels", [])):
-        for specification in referable.get("embeddedDataSpecifications", []):
-            content = specification.get("dataSpecificationContent", {})
-            if content.get("preferredName") == [{"language": "en", "text": "class"}]:
-                content["value"] = "<authoring-class>"
 
     def normalize(value):
-        # The fork generates random data-specification IDs; shell references
-        # and top-level submodels are unordered collections in BaSyx.
+        # Shell references and top-level submodels are unordered collections in BaSyx.
         if isinstance(value, dict):
             result = {key: normalize(child) for key, child in value.items()}
             for key in ("submodels", "submodel"):
@@ -47,8 +35,6 @@ def _document(store):
             return result
         if isinstance(value, list):
             return [normalize(child) for child in value]
-        if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{32}", value):
-            return "generated-id"
         return value
 
     return normalize(document)
@@ -56,12 +42,6 @@ def _document(store):
 
 def test_resource_keeps_existing_public_type_name():
     assert ResourceTypeAAS is Resource
-
-
-def test_resource_instance_package_exports_the_module_factory():
-    from aas_model.resource_instances import syntegon_stoppering as package_factory
-
-    assert package_factory is syntegon_stoppering
 
 
 def test_resource_defaults_are_independent_and_their_invocation_urls_resolve_when_built():

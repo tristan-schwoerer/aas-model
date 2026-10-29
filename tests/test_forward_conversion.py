@@ -23,11 +23,6 @@ def _element(submodel: model.Submodel, id_short: str):
     return submodel.get_referable(id_short)
 
 
-def _markers(element) -> list[tuple[str, str, str]]:
-    return [(spec.data_specification.key[0].value, spec.data_specification_content.preferred_name.get("en"),
-             spec.data_specification_content.value) for spec in element.embedded_data_specifications]
-
-
 def test_a_submodel_keeps_its_qualifiers_and_supplemental_semantic_ids():
     sm = convert_model_to_submodel(Submodel(
         id_short="SM", id="urn:sm", supplemental_semantic_ids=["urn:extra"],
@@ -44,7 +39,7 @@ def test_building_a_resource_twice_gives_the_same_aas(name):
     assert json_serialization.object_store_to_json(build_from_model(resource)) == first
 
 
-def test_an_element_is_marked_with_its_own_class_only():
+def test_no_element_carries_a_data_specification():
     class Inner(SubmodelElementCollection):
         note: Property = Property(value="x")
 
@@ -55,12 +50,11 @@ def test_an_element_is_marked_with_its_own_class_only():
         absent: ReferenceElement | None = None
 
     submodel = convert_model_to_submodel(Holder(id_short="Holder", id="urn:holder", names=[Property(value="a")]))
-    assert _markers(submodel) == [("urn:holder", "class", "Holder")]
-    assert _markers(_element(submodel, "inner")) == [("inner", "class", "Inner")]
-    assert _markers(_element(submodel, "present")) == []
+    document = json.loads(json_serialization.object_store_to_json(model.DictIdentifiableStore([submodel])))
+    assert "embeddedDataSpecifications" not in json.dumps(document)
 
 
-def test_the_shell_names_its_submodels_by_their_id():
+def test_the_shell_references_each_submodel_once_by_its_id():
     class Shell(AAS):
         first: Submodel
         second: Submodel
@@ -70,8 +64,8 @@ def test_the_shell_names_its_submodels_by_their_id():
     store = convert_model_to_aas(shell)
     assert {o.id for o in store} == {"urn:shell", "urn:sm1", "urn:sm2"}
     aas = next(o for o in store if o.id == "urn:shell")
-    assert {(key, value) for key, kind, value in _markers(aas) if kind == "attribute"} == {
-        ("urn:sm1", "first"), ("urn:sm2", "second")}
+    assert {reference.key[0].value for reference in aas.submodel} == {"urn:sm1", "urn:sm2"}
+    assert not aas.embedded_data_specifications
     # No asset type is invented for a shell that declares none.
     assert aas.asset_information.asset_type is None
 
@@ -139,7 +133,6 @@ def test_an_operation_leaves_out_a_variable_without_value():
 
     op = _element(convert_model_to_submodel(Holder(id_short="Holder", id="urn:holder")), "op")
     assert [v.id_short for v in op.input_variable] == ["P"]
-    assert ("op", "class", "Operation") in _markers(op)
 
 
 def test_a_key_without_type_in_an_external_reference_is_a_global_reference():
@@ -171,12 +164,12 @@ def test_an_identifiable_given_only_its_id_keeps_its_class_id_short():
     assert Named(id="urn:named").id_short == "Named"
 
 
-def test_temporary_list_item_names_never_reach_the_json():
+def test_a_named_list_item_is_shown_by_its_name():
     class Holder(Submodel):
         items: SubmodelElementList = SubmodelElementList(value=[Item(id_short="First")])
         nested: Dict[str, SubmodelElementCollection] = {}
 
     store = model.DictIdentifiableStore([convert_model_to_submodel(Holder(id_short="Holder", id="urn:holder"))])
-    from aas_pydantic.convert_util import strip_temp_id_short_attributes
-    strip_temp_id_short_attributes(store)
-    assert "temp_id_short_attribute" not in json.dumps(json.loads(json_serialization.object_store_to_json(store)))
+    [item] = json.loads(json_serialization.object_store_to_json(store))["submodels"][0]["submodelElements"][0]["value"]
+    assert "idShort" not in item
+    assert item["displayName"] == [{"language": "en", "text": "First"}]

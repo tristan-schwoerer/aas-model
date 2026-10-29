@@ -4,12 +4,10 @@ import json
 
 import pytest
 from basyx.aas import model
-from basyx.aas.adapter.json import json_serialization
 
 from aas_model import Resource, inject_ids
-from aas_json import parse_submodel_dict
+from aas_json import element, published, value
 from aas_pydantic import AAS, convert_model_to_aas
-from aas_pydantic.convert_util import strip_temp_id_short_attributes
 from aas_pydantic.submodel_templates.time_series import (
     EndTime, Endpoint, ExternalSegment, File_time_series, InternalSegment, LinkedSegment, Metadata,
     Name, Query, Record, Records, SampleAccelerationX, Segments, Time, TimeSeries,
@@ -57,27 +55,25 @@ def test_time_series_json_roundtrip_retains_segment_types(series):
     assert restored.Segments.LinkedSegment["Database"].EndTime.semantic_id.endswith("/EndTime/1/1")
 
 
-def test_time_series_standalone_aas_roundtrip(series):
+def test_time_series_builds_into_a_standalone_aas(series):
     class SeriesShell(AAS):
         time_series: TimeSeries
 
     asset = SeriesShell(id_short="SeriesShell", id="urn:test:series-shell", time_series=series)
     inject_ids(asset)
     store = convert_model_to_aas(asset)
-    strip_temp_id_short_attributes(store)
-    document = json.loads(json_serialization.object_store_to_json(store))
-    restored = parse_submodel_dict(document["submodels"][0], TimeSeries)
+    [built] = published(*store)["submodels"]
 
     assert len(store) == 2
     shell = next(obj for obj in store if isinstance(obj, model.AssetAdministrationShell))
     assert len(shell.submodel) == 1
     assert next(iter(shell.submodel)).resolve(store).id_short == "TimeSeries"
-    assert restored.Metadata.Name.value == {"en": "Acceleration samples"}
-    record = restored.Segments.InternalSegment["Measurements"].Records.Record["Sample0001"]
-    assert record.Time["RelativeTime"].value == "1"
-    assert record.sampleAccelerationX.value == "12"
-    assert restored.Segments.ExternalSegment["Archive"].File.value == "https://example.test/series.json"
-    assert restored.Segments.LinkedSegment["Database"].Query.value == "SELECT acceleration FROM measurements"
+    assert value(built, "Metadata", "Name") == [{"language": "en", "text": "Acceleration samples"}]
+    record = element(built, "Segments", "Measurements", "Records", "Sample0001")
+    assert value(record, "RelativeTime") == "1"
+    assert value(record, "sampleAccelerationX") == "12"
+    assert value(built, "Segments", "Archive", "File") == "https://example.test/series.json"
+    assert value(built, "Segments", "Database", "Query") == "SELECT acceleration FROM measurements"
 
 
 def test_time_series_is_not_part_of_resource():

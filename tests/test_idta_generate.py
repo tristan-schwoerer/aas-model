@@ -306,9 +306,8 @@ def test_sanitized_fields_keep_original_aas_id_short(tmp_path):
     assert model.Has_Hyphen.id_short == "Has-Hyphen"
 
 
-def test_aid_keyword_field_round_trips_with_original_id_short():
+def test_aid_keyword_field_keeps_its_original_id_short():
     from aas_pydantic.convert_pydantic_model import create_submodel_element
-    from aas_pydantic.convert_aas_instance import _container_element_to_pydantic
     from aas_pydantic.submodel_templates.asset_interfaces_description import (
         In, Scheme, basic_sc,
     )
@@ -316,7 +315,6 @@ def test_aid_keyword_field_round_trips_with_original_id_short():
     security = basic_sc(scheme=Scheme(value="basic"), in_=In(value="header"))
     basyx = create_submodel_element("basic_sc", security)
     assert {child.id_short for child in basyx.value} == {"scheme", "in"}
-    assert _container_element_to_pydantic(basyx, basic_sc).in_.id_short == "in"
 
 
 def test_required_repeated_elements_can_be_validated_before_publishing(tmp_path):
@@ -340,7 +338,6 @@ def test_required_repeated_elements_can_be_validated_before_publishing(tmp_path)
 
 
 def test_list_declarations_not_example_defaults_are_authoritative(tmp_path):
-    from aas_pydantic.convert_aas_instance import convert_submodel_list_to_pydantic_model
     from aas_pydantic.convert_pydantic_model import create_submodel_element
 
     module = _generate_fixture(tmp_path, [_element(
@@ -359,9 +356,7 @@ def test_list_declarations_not_example_defaults_are_authoritative(tmp_path):
     assert exported.value_type_list_element.__name__ == "Int"
     assert exported.order_relevant is False
     assert exported.semantic_id_list_element.key[0].value == "urn:item"
-    restored = convert_submodel_list_to_pydantic_model(exported, module.Readings)
-    assert restored.value_type_list_element == "xs:int"
-    assert restored.value[0].value_type == "xs:int"
+    assert [item.value_type.__name__ for item in exported.value] == ["Int"]
 
 
 def test_distinct_leaf_metadata_does_not_share_a_class(tmp_path):

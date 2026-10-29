@@ -460,13 +460,10 @@ def test_capabilities_explicitly_link_to_the_selected_implementation(name, group
 
 def test_optional_operation_outputs_carry_the_dmp_qualifier_through_export():
     from basyx.aas.adapter.json import json_serialization
-    from aas_pydantic.convert_util import strip_temp_id_short_attributes
     from aas_model.builder import build_from_model
     from aas_model.submodel_templates.control_component_instance import OPERATION_VARIABLE_OPTIONAL
 
-    store = build_from_model(RESOURCE_FACTORIES["imaDispensing"]())
-    strip_temp_id_short_attributes(store)
-    doc = json.loads(json_serialization.object_store_to_json(store))
+    doc = json.loads(json_serialization.object_store_to_json(build_from_model(RESOURCE_FACTORIES["imaDispensing"]())))
     cci = next(s for s in doc["submodels"] if s["idShort"] == "ControlComponentInstance")
     skills = next(e for e in cci["submodelElements"] if e["idShort"] == "Skills")
     skill = next(s for s in skills["value"] if s["idShort"] == "Dispensing")

@@ -5,12 +5,12 @@ from aas_pydantic.submodel_templates.asset_interfaces_description import Title
 from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import SinksItem, SourcesItem
 from aas_pydantic.submodel_templates.capability_description import CapabilityRealizedBy, CapabilityRelations
 from aas_pydantic.submodel_templates.hierarchical_structures import EntryNode, Node
-from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_pydantic.submodel_templates.nameplate import ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template import ResourceNameplate
 from aas_pydantic.submodel_templates.time_series import Name
 
 from aas_model.constants import BASE_URL, BROKER, SCHEMA_BASE, SITE
 from aas_model.json_schema_aid import datapoint_from_schema, load_schema
-from aas_model.resource_instances.site import SITE_ADDRESS
 from aas_model.resource_template.operational import COMMAND_RESPONSE_SCHEMA, COMMAND_RESPONSE_SCHEMA_URL
 from aas_model.resource_template.references import (
     MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, series_segment_ref,
@@ -51,12 +51,11 @@ def _planar_shuttle(number: int, x: float) -> PlanarShuttle:
     resource = PlanarShuttle(
         id_short=identity,
         id=resource_id,
-        nameplate=Nameplate(
+        nameplate=ResourceNameplate(
             URIOfTheProduct=resource_id,
             ManufacturerName=ManufacturerName(value={"en": "Planar Motors"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "Planar Motors Shuttle"}),
             ManufacturerProductType="Planar Motors Shuttle",
-            AddressInformation=SITE_ADDRESS.model_copy(deep=True),
             OrderCodeOfManufacturer="",
             YearOfConstruction="2024",
             CountryOfOrigin="DK",

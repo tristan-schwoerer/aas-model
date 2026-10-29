@@ -245,8 +245,8 @@ def validate_idta_cardinality(model: BaseModel) -> None:
 # discriminator and revalidation resolves the concrete type directly instead
 # of relying on fragile key inference.
 _ELEMENT_CLASS_REGISTRY: dict = {}
-# Every element class by its name: names repeat across templates (AID's and CCI's ``Type``), and a class marker
-# names a class only by its name.
+# Every element class by its name: names repeat across templates (AID's and CCI's ``Type``), and a dump's
+# ``modelType`` names a class only by its name.
 _ELEMENT_CLASSES_BY_NAME: dict = {}
 
 # semanticId value → list of concrete element classes carrying it.  Populated

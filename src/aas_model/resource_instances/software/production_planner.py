@@ -1,8 +1,8 @@
 """AAU production planner instance."""
 
 from aas_model.constants import BASE_URL, BROKER, CSSX, SCHEMA_BASE, SITE
-from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_pydantic.submodel_templates.nameplate import ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template import ResourceNameplate
 from aas_model.resource_template.resources import MqttSoftwareResource
 from aas_model.resource_template.references import (
     MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, series_segment_ref,
@@ -32,12 +32,11 @@ def production_planner() -> MqttSoftwareResource:
     resource = MqttSoftwareResource(
         id_short=identity, id=f"{BASE_URL}/aas/{identity}",
         asset_type=f"{CSSX}#ProductionPlanner", specific_asset_ids={"serialNumber": serial},
-        nameplate=Nameplate(
+        nameplate=ResourceNameplate(
             URIOfTheProduct=f"{BASE_URL}/aas/{identity}",
             ManufacturerName=ManufacturerName(value={"en": "Aalborg University"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "AAU Production Planner"}),
             ManufacturerProductType="AAU Production Planner",
-            AddressInformation=SITE_ADDRESS.model_copy(deep=True),
             OrderCodeOfManufacturer=serial,
             SerialNumber=serial, YearOfConstruction="2024",
             CountryOfOrigin="DK",
