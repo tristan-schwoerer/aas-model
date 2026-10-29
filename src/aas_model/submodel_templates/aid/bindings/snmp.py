@@ -50,7 +50,11 @@ class SnmpProperties(DmpProperties):
 
 
 class SnmpInteractionMetadata(DmpInteractionMetadata):
+    """SNMP interaction metadata: properties only. AID 1.2 Annex E.1 reads (GET) and writes (SET) objects; it
+    has no actions, and traps are not part of the binding."""
     properties: Optional[SnmpProperties] = None
+    actions: None = None
+    events: None = None
 
 
 class DmpSnmpInterface(_BaseSnmpInterface):

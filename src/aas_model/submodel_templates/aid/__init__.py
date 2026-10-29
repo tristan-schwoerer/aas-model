@@ -59,16 +59,16 @@ from aas_model.submodel_templates.aid.bindings.http import (
     HttpForm, HttpActionForm, DmpHttpInterface,
 )
 from aas_model.submodel_templates.aid.bindings.modbus import (
-    ModbusForm, ModbusActionForm, DmpModbusEndpointMetadata, DmpModbusInterface,
+    ModbusForm, ModbusInteractionMetadata, DmpModbusEndpointMetadata, DmpModbusInterface,
 )
 from aas_model.submodel_templates.aid.bindings.bacnet import (
-    BacnetForm, BacnetActionForm, DmpBacnetInterface,
+    BacnetForm, BacnetInteractionMetadata, DmpBacnetInterface,
 )
 from aas_model.submodel_templates.aid.bindings.iolink import (
-    IolinkForm, IolinkActionForm, DmpIolinkInterface,
+    IolinkForm, IolinkInteractionMetadata, DmpIolinkInterface,
 )
 from aas_model.submodel_templates.aid.bindings.can import (
-    CanForm, CanActionForm, DmpCanInterface,
+    CanForm, CanInteractionMetadata, DmpCanInterface,
 )
 from aas_model.submodel_templates.aid.bindings.mqtt import (
     MqvResponseTopic, MqttForm, MqttActionForm, MqttAction, MqttActions, MqttInteractionMetadata,
@@ -94,10 +94,10 @@ __all__ = [
     "DmpProperty", "DmpProperties", "Safe", "Idempotent", "Synchronous", "DmpActionInput", "DmpActionOutput", "DmpAction", "DmpActions", "DmpEventSubscription", "DmpEventData", "DmpEventDataResponse", "DmpEventCancellation", "DmpEvent", "DmpEvents", "DmpInteractionMetadata",
     "DmpEndpointMetadata",
     "HttpForm", "HttpActionForm", "DmpHttpInterface",
-    "ModbusForm", "ModbusActionForm", "DmpModbusEndpointMetadata", "DmpModbusInterface",
-    "BacnetForm", "BacnetActionForm", "DmpBacnetInterface",
-    "IolinkForm", "IolinkActionForm", "DmpIolinkInterface",
-    "CanForm", "CanActionForm", "DmpCanInterface",
+    "ModbusForm", "ModbusInteractionMetadata", "DmpModbusEndpointMetadata", "DmpModbusInterface",
+    "BacnetForm", "BacnetInteractionMetadata", "DmpBacnetInterface",
+    "IolinkForm", "IolinkInteractionMetadata", "DmpIolinkInterface",
+    "CanForm", "CanInteractionMetadata", "DmpCanInterface",
     "MqvResponseTopic", "MqttForm", "MqttActionForm", "MqttAction", "MqttActions", "MqttInteractionMetadata", "MqttInterface",
     "UavComponentOf", "OpcuaForm", "OpcuaActionForm", "DmpOpcuaEndpointMetadata", "OpcuaAction", "OpcuaActions", "UavEventType", "UavEventField", "OpcuaEventField", "OpcuaEventFields", "OpcuaEventData", "OpcuaEvent", "OpcuaEvents", "OpcuaInteractionMetadata", "DmpOpcuaInterface",
     "SnmpvPduType", "SnmpvVersion", "SnmpForm", "SnmpProperty", "SnmpProperties", "SnmpInteractionMetadata", "DmpSnmpInterface",

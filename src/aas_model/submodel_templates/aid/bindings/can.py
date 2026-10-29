@@ -13,19 +13,22 @@ from aas_pydantic.submodel_templates.asset_interfaces_description import (
 )
 
 from aas_model.submodel_templates.aid.affordances import DmpInteractionMetadata
-from aas_model.submodel_templates.aid.forms import DmpActionForm, DmpForm
+from aas_model.submodel_templates.aid.forms import DmpForm
 from aas_model.submodel_templates.aid.interface import DmpEndpointMetadata
 
 
-
 class CanForm(DmpForm, forms_CAN):
-    """The form of a CAN property or event."""
+    """The form of a CAN property."""
 
 
-class CanActionForm(DmpActionForm, forms_CAN):
-    """The form of a CAN action."""
+class CanInteractionMetadata(DmpInteractionMetadata):
+    """CAN interaction metadata: properties only. AID 1.2 Annex E.2 describes a frame's signals as properties, neither
+    actions nor events."""
+    actions: None = None
+    events: None = None
+
 
 class DmpCanInterface(_BaseInterface):
     title: Title = Title()
     EndpointMetadata: EndpointMetadata_t = DmpEndpointMetadata()
-    InteractionMetadata: DmpInteractionMetadata = DmpInteractionMetadata()
+    InteractionMetadata: CanInteractionMetadata = CanInteractionMetadata()

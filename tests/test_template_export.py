@@ -135,3 +135,25 @@ def test_the_published_templates_are_aas_their_readers_accept(path, tmp_path):
     assert submodel.kind is model.ModellingKind.TEMPLATE
     assert shell.asset_information.asset_kind is model.AssetKind.TYPE
     assert {r.key[0].value for r in shell.submodel} == {submodel.id}
+
+
+def test_only_protocols_with_actions_and_events_declare_them():
+    """Modbus, SNMP, CAN, BACnet and IO-Link describe properties only; MQTT, HTTP and OPC UA also actions and
+    events, as their bindings define them."""
+    from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
+    document = _json(convert_model_to_submodel_template(DmpAssetInterfacesDescription, "urn:test:aid"))
+    kinds = {}
+    for interface in document["submodelElements"]:
+        metadata = next(e for e in interface["value"] if e["idShort"] == "InteractionMetadata")
+        kinds[interface["idShort"].removeprefix("InterfaceTemplateFor")] = sorted(e["idShort"] for e in metadata["value"])
+    for protocol in ("MQTT", "HTTP", "OPCUA"):
+        assert kinds[protocol] == ["actions", "events", "properties"], protocol
+    for protocol in ("MODBUS", "SNMP", "CAN", "Bacnet", "IOLINK_OVER_PROFINET_REST"):
+        assert kinds[protocol] == ["properties"], protocol
+
+
+def test_a_modbus_interface_holds_no_actions():
+    from pydantic import ValidationError
+    from aas_model.submodel_templates.aid import DmpActions, ModbusInteractionMetadata
+    with pytest.raises(ValidationError):
+        ModbusInteractionMetadata(actions=DmpActions())

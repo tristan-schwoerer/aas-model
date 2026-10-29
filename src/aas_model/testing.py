@@ -21,7 +21,7 @@ from aas_model.submodel_templates.aid import (
     DmpForm, DmpInteractionMetadata, DmpProperties, DmpProperty, DmpHttpInterface, DmpModbusInterface,
     DmpSnmpInterface, SnmpForm, SnmpInteractionMetadata, SnmpProperties, SnmpProperty, SnmpvPduType, SnmpvVersion,
     DmpBacnetInterface, DmpOpcuaInterface, MqttAction, MqttActionForm, MqttForm, OpcuaForm, OpcuaActionForm,
-    HttpForm, HttpActionForm, ModbusForm, ModbusActionForm, BacnetForm, BacnetActionForm, MqttActions, MqttInteractionMetadata,
+    HttpForm, HttpActionForm, ModbusForm, ModbusInteractionMetadata, BacnetForm, BacnetInteractionMetadata, MqttActions, MqttInteractionMetadata,
     MqttInterface, MqvResponseTopic, OpcuaAction, OpcuaActions, OpcuaEvent, OpcuaEventData, OpcuaEvents,
     OpcuaInteractionMetadata, Synchronous, UavComponentOf, UavEventType, Op,
 )
@@ -201,14 +201,14 @@ def http_interface(base: str, *, properties=None, actions=None) -> DmpHttpInterf
                           form_cls=HttpForm, action_form_cls=HttpActionForm)
 
 
-def modbus_interface(base: str, *, properties=None, actions=None) -> DmpModbusInterface:
-    return _gen_interface(DmpModbusInterface, base, properties=properties, actions=actions,
-                          form_cls=ModbusForm, action_form_cls=ModbusActionForm)
+def modbus_interface(base: str, *, properties=None) -> DmpModbusInterface:
+    return _gen_interface(DmpModbusInterface, base, properties=properties, form_cls=ModbusForm,
+                          meta_cls=ModbusInteractionMetadata)
 
 
-def bacnet_interface(base: str, *, properties=None, actions=None) -> DmpBacnetInterface:
-    return _gen_interface(DmpBacnetInterface, base, properties=properties, actions=actions,
-                          form_cls=BacnetForm, action_form_cls=BacnetActionForm)
+def bacnet_interface(base: str, *, properties=None) -> DmpBacnetInterface:
+    return _gen_interface(DmpBacnetInterface, base, properties=properties, form_cls=BacnetForm,
+                          meta_cls=BacnetInteractionMetadata)
 
 
 def snmp_interface(base: str, *, properties=None, observable: bool = False) -> DmpSnmpInterface:

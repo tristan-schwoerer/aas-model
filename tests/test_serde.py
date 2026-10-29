@@ -209,19 +209,16 @@ def test_protocol_specific_endpoint_and_form_terms_round_trip():
     schemes) on the extended forms and endpoint metadata survives a round
     trip. The Modbus interface is authored as AID Annex B describes it: the
     unit ID in the base, the register address and quantity in the href."""
-    from aas_model.submodel_templates.aid import DmpActionForm, DmpModbusInterface, DmpOpcuaInterface
+    from aas_model.submodel_templates.aid import DmpModbusInterface, DmpOpcuaInterface, ModbusForm
     from aas_model.testing import modbus_interface, opcua_interface
     from aas_pydantic import Property
 
     aid = DmpAssetInterfacesDescription(id_short="AssetInterfacesDescription")
-    modbus = modbus_interface(
-        "modbus+tcp://192.168.0.70:502/1/",
-        properties={"Coil1": "0?quantity=1"},
-        actions={"WriteCoil": ("0?quantity=1", None)})
+    modbus = modbus_interface("modbus+tcp://192.168.0.70:502/1/", properties={"Coil1": "0?quantity=1"})
     modbus.EndpointMetadata.modv_mostSignificantByte = Property(
         semantic_id="https://www.w3.org/2019/wot/modbus#hasMostSignificantByte",
         value="false")
-    modbus.InteractionMetadata.actions.property_name["WriteCoil"].forms.modv_function = Property(
+    modbus.InteractionMetadata.properties.property_name["Coil1"].forms.modv_function = Property(
         semantic_id="https://www.w3.org/2019/wot/modbus#hasFunction",
         value="writeSingleCoil")
     aid.InterfaceTemplateForMODBUS["interface_modbus"] = modbus
@@ -251,9 +248,9 @@ def test_protocol_specific_endpoint_and_form_terms_round_trip():
     mb = back.InterfaceTemplateForMODBUS["interface_modbus"]
     assert isinstance(mb, DmpModbusInterface)
     assert mb.EndpointMetadata.modv_mostSignificantByte.value == "false"
-    action = mb.InteractionMetadata.actions.property_name["WriteCoil"]
-    assert isinstance(action.forms, DmpActionForm)
-    assert action.forms.modv_function.value == "writeSingleCoil"
+    coil = mb.InteractionMetadata.properties.property_name["Coil1"]
+    assert isinstance(coil.forms, ModbusForm)
+    assert coil.forms.modv_function.value == "writeSingleCoil"
 
     oc = back.InterfaceTemplateForOPCUA["interface_opcua"]
     assert isinstance(oc, DmpOpcuaInterface)

@@ -2795,6 +2795,83 @@
         "title": "Authorization",
         "type": "object"
       },
+      "BacnetInteractionMetadata": {
+        "additionalProperties": false,
+        "description": "BACnet interaction metadata: properties only. The binding writes properties instead of invoking actions; COV\nnotifications observe a property.",
+        "properties": {
+          "actions": {
+            "default": null,
+            "title": "Actions",
+            "type": "null"
+          },
+          "description": {
+            "default": "Provides the metadata of the actually interfaces such as which datapoints and functions are provided by the properties, actions, and events interaction abstraction. ",
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Name"
+          },
+          "events": {
+            "default": null,
+            "title": "Events",
+            "type": "null"
+          },
+          "id_short": {
+            "default": "InteractionMetadata",
+            "title": "Id Short",
+            "type": "string"
+          },
+          "properties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DmpProperties"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "qualifiers": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Qualifier"
+            },
+            "title": "Qualifiers",
+            "type": "array"
+          },
+          "semantic_id": {
+            "default": "https://admin-shell.io/idta/AssetInterfacesDescription/1/0/InteractionMetadata",
+            "title": "Semantic Id",
+            "type": "string"
+          },
+          "supplemental_semantic_ids": {
+            "default": [
+              "https://www.w3.org/2019/wot/td#InteractionAffordance"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supplemental Semantic Ids",
+            "type": "array"
+          }
+        },
+        "title": "BacnetInteractionMetadata",
+        "type": "object"
+      },
       "Base": {
         "additionalProperties": false,
         "properties": {
@@ -2861,6 +2938,83 @@
           }
         },
         "title": "Base",
+        "type": "object"
+      },
+      "CanInteractionMetadata": {
+        "additionalProperties": false,
+        "description": "CAN interaction metadata: properties only. AID 1.2 Annex E.2 describes a frame's signals as properties, neither\nactions nor events.",
+        "properties": {
+          "actions": {
+            "default": null,
+            "title": "Actions",
+            "type": "null"
+          },
+          "description": {
+            "default": "Provides the metadata of the actually interfaces such as which datapoints and functions are provided by the properties, actions, and events interaction abstraction. ",
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Name"
+          },
+          "events": {
+            "default": null,
+            "title": "Events",
+            "type": "null"
+          },
+          "id_short": {
+            "default": "InteractionMetadata",
+            "title": "Id Short",
+            "type": "string"
+          },
+          "properties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DmpProperties"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "qualifiers": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Qualifier"
+            },
+            "title": "Qualifiers",
+            "type": "array"
+          },
+          "semantic_id": {
+            "default": "https://admin-shell.io/idta/AssetInterfacesDescription/1/0/InteractionMetadata",
+            "title": "Semantic Id",
+            "type": "string"
+          },
+          "supplemental_semantic_ids": {
+            "default": [
+              "https://www.w3.org/2019/wot/td#InteractionAffordance"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supplemental Semantic Ids",
+            "type": "array"
+          }
+        },
+        "title": "CanInteractionMetadata",
         "type": "object"
       },
       "Const": {
@@ -4439,7 +4593,7 @@
             "default": null
           },
           "InteractionMetadata": {
-            "$ref": "#/$defs/DmpInteractionMetadata",
+            "$ref": "#/$defs/BacnetInteractionMetadata",
             "default": {
               "actions": null,
               "description": "Provides the metadata of the actually interfaces such as which datapoints and functions are provided by the properties, actions, and events interaction abstraction. ",
@@ -4633,7 +4787,7 @@
             "default": null
           },
           "InteractionMetadata": {
-            "$ref": "#/$defs/DmpInteractionMetadata",
+            "$ref": "#/$defs/CanInteractionMetadata",
             "default": {
               "actions": null,
               "description": "Provides the metadata of the actually interfaces such as which datapoints and functions are provided by the properties, actions, and events interaction abstraction. ",
@@ -7086,7 +7240,7 @@
             "default": null
           },
           "InteractionMetadata": {
-            "$ref": "#/$defs/DmpInteractionMetadata",
+            "$ref": "#/$defs/IolinkInteractionMetadata",
             "default": {
               "actions": null,
               "description": "Provides the metadata of the actually interfaces such as which datapoints and functions are provided by the properties, actions, and events interaction abstraction. ",
@@ -7773,7 +7927,7 @@
             "default": null
           },
           "InteractionMetadata": {
-            "$ref": "#/$defs/DmpInteractionMetadata",
+            "$ref": "#/$defs/ModbusInteractionMetadata",
             "default": {
               "actions": null,
               "description": "Provides the metadata of the actually interfaces such as which datapoints and functions are provided by the properties, actions, and events interaction abstraction. ",
@@ -10062,6 +10216,83 @@
         "title": "In",
         "type": "object"
       },
+      "IolinkInteractionMetadata": {
+        "additionalProperties": false,
+        "description": "IO-Link interaction metadata: properties only. The binding describes the device's process and parameter data,\nneither actions nor events.",
+        "properties": {
+          "actions": {
+            "default": null,
+            "title": "Actions",
+            "type": "null"
+          },
+          "description": {
+            "default": "Provides the metadata of the actually interfaces such as which datapoints and functions are provided by the properties, actions, and events interaction abstraction. ",
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Name"
+          },
+          "events": {
+            "default": null,
+            "title": "Events",
+            "type": "null"
+          },
+          "id_short": {
+            "default": "InteractionMetadata",
+            "title": "Id Short",
+            "type": "string"
+          },
+          "properties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DmpProperties"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "qualifiers": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Qualifier"
+            },
+            "title": "Qualifiers",
+            "type": "array"
+          },
+          "semantic_id": {
+            "default": "https://admin-shell.io/idta/AssetInterfacesDescription/1/0/InteractionMetadata",
+            "title": "Semantic Id",
+            "type": "string"
+          },
+          "supplemental_semantic_ids": {
+            "default": [
+              "https://www.w3.org/2019/wot/td#InteractionAffordance"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supplemental Semantic Ids",
+            "type": "array"
+          }
+        },
+        "title": "IolinkInteractionMetadata",
+        "type": "object"
+      },
       "ItemsRange": {
         "additionalProperties": false,
         "properties": {
@@ -10419,6 +10650,83 @@
           }
         },
         "title": "MinMax",
+        "type": "object"
+      },
+      "ModbusInteractionMetadata": {
+        "additionalProperties": false,
+        "description": "Modbus interaction metadata: properties only. Modbus reads and writes registers and coils; it has no actions (an\nOperation writes a property's tag) and no events (an observation is polled).",
+        "properties": {
+          "actions": {
+            "default": null,
+            "title": "Actions",
+            "type": "null"
+          },
+          "description": {
+            "default": "Provides the metadata of the actually interfaces such as which datapoints and functions are provided by the properties, actions, and events interaction abstraction. ",
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Name"
+          },
+          "events": {
+            "default": null,
+            "title": "Events",
+            "type": "null"
+          },
+          "id_short": {
+            "default": "InteractionMetadata",
+            "title": "Id Short",
+            "type": "string"
+          },
+          "properties": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DmpProperties"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "qualifiers": {
+            "default": [],
+            "items": {
+              "$ref": "#/$defs/Qualifier"
+            },
+            "title": "Qualifiers",
+            "type": "array"
+          },
+          "semantic_id": {
+            "default": "https://admin-shell.io/idta/AssetInterfacesDescription/1/0/InteractionMetadata",
+            "title": "Semantic Id",
+            "type": "string"
+          },
+          "supplemental_semantic_ids": {
+            "default": [
+              "https://www.w3.org/2019/wot/td#InteractionAffordance"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Supplemental Semantic Ids",
+            "type": "array"
+          }
+        },
+        "title": "ModbusInteractionMetadata",
         "type": "object"
       },
       "Modified": {
@@ -14467,17 +14775,12 @@
       },
       "SnmpInteractionMetadata": {
         "additionalProperties": false,
+        "description": "SNMP interaction metadata: properties only. AID 1.2 Annex E.1 reads (GET) and writes (SET) objects; it\nhas no actions, and traps are not part of the binding.",
         "properties": {
           "actions": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/DmpActions"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
+            "default": null,
+            "title": "Actions",
+            "type": "null"
           },
           "description": {
             "default": "Provides the metadata of the actually interfaces such as which datapoints and functions are provided by the properties, actions, and events interaction abstraction. ",
@@ -14500,15 +14803,9 @@
             "title": "Display Name"
           },
           "events": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/DmpEvents"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
+            "default": null,
+            "title": "Events",
+            "type": "null"
           },
           "id_short": {
             "default": "InteractionMetadata",

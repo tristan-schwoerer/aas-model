@@ -48,6 +48,7 @@ CCI_SUBMODEL_ID = "{aas_id}/submodels/ControlComponentInstance"
 CONTROL_COMPONENT_TYPE_SUBMODEL_ID = "{aas_id}/submodels/ControlComponentType"
 VARIABLES_SUBMODEL_ID = "{aas_id}/submodels/Variables"
 CAPABILITIES_SUBMODEL_ID = "{aas_id}/submodels/CapabilityDescription"
+HIERARCHICAL_STRUCTURES_SUBMODEL_ID = "{aas_id}/submodels/HierarchicalStructures"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # AID extension (docs/aid-extension.md) — WoT TD terms AID 1.2 does not carry.

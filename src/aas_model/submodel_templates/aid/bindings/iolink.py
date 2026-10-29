@@ -8,19 +8,22 @@ from aas_pydantic.submodel_templates.asset_interfaces_description import (
 )
 
 from aas_model.submodel_templates.aid.affordances import DmpInteractionMetadata
-from aas_model.submodel_templates.aid.forms import DmpActionForm, DmpForm
+from aas_model.submodel_templates.aid.forms import DmpForm
 from aas_model.submodel_templates.aid.interface import DmpEndpointMetadata
 
 
-
 class IolinkForm(DmpForm, forms_IOLINK_OVER_PROFINET_REST):
-    """The form of a IO-Link property or event."""
+    """The form of a IO-Link property."""
 
 
-class IolinkActionForm(DmpActionForm, forms_IOLINK_OVER_PROFINET_REST):
-    """The form of a IO-Link action."""
+class IolinkInteractionMetadata(DmpInteractionMetadata):
+    """IO-Link interaction metadata: properties only. The binding describes the device's process and parameter data,
+    neither actions nor events."""
+    actions: None = None
+    events: None = None
+
 
 class DmpIolinkInterface(_BaseInterface):
     title: Title = Title()
     EndpointMetadata: EndpointMetadata_t = DmpEndpointMetadata()
-    InteractionMetadata: DmpInteractionMetadata = DmpInteractionMetadata()
+    InteractionMetadata: IolinkInteractionMetadata = IolinkInteractionMetadata()
