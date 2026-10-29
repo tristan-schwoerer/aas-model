@@ -157,3 +157,18 @@ def test_a_modbus_interface_holds_no_actions():
     from aas_model.submodel_templates.aid import DmpActions, ModbusInteractionMetadata
     with pytest.raises(ValidationError):
         ModbusInteractionMetadata(actions=DmpActions())
+
+
+def test_a_template_display_name_labels_the_template_not_its_instances():
+    """``Capability Set`` names the template element: an instance is shown by its own idShort, and the template
+    export carries the label again."""
+    from aas_model import build_from_model
+    from aas_model.resource_instances import RESOURCE_FACTORIES
+    from aas_pydantic.submodel_templates.capability_description import CapabilityDescription
+    template = _json(convert_model_to_submodel_template(CapabilityDescription, "urn:test:capabilities"))
+    assert template["displayName"] == [{"language": "en", "text": "Submodel Template Capability Description"}]
+    assert template["submodelElements"][0]["displayName"] == [{"language": "en", "text": "Capability Set"}]
+    store = build_from_model(RESOURCE_FACTORIES["cytivaCapping"]())
+    document = json.loads(json_serialization.object_store_to_json(store))
+    capabilities = next(s for s in document["submodels"] if s["idShort"] == "CapabilityDescription")
+    assert "displayName" not in json.dumps(capabilities)

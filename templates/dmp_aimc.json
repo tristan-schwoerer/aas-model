@@ -242,6 +242,12 @@
                   },
                   "value": [
                     {
+                      "displayName": [
+                        {
+                          "language": "en",
+                          "text": "Source"
+                        }
+                      ],
                       "modelType": "SubmodelElementCollection",
                       "qualifiers": [
                         {
@@ -459,6 +465,12 @@
                   },
                   "value": [
                     {
+                      "displayName": [
+                        {
+                          "language": "en",
+                          "text": "Sink"
+                        }
+                      ],
                       "modelType": "SubmodelElementCollection",
                       "qualifiers": [
                         {

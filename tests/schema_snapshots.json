@@ -21,9 +21,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Default polling interval"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -361,9 +359,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Mapping configuration"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -421,9 +417,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Mapping configurations"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -574,9 +568,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Sink ID"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -867,9 +859,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Source ID"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -1233,9 +1223,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Sinks"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -1410,9 +1398,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Sources"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -1543,9 +1529,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Polling interval"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -1681,9 +1665,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Sink"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -1747,9 +1729,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Sink ID"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -1817,9 +1797,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Source"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -1883,9 +1861,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Source ID"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -1958,9 +1934,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Transformation"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {
@@ -2014,9 +1988,7 @@
         "$ref": "#/$defs/DmpMappingConfigurations",
         "default": {
           "description": "List of MappingConfigurations that each map and transform data from their sources to their sinks.",
-          "display_name": {
-            "en": "Mapping configurations"
-          },
+          "display_name": null,
           "id_short": "MappingConfigurations",
           "order_relevant": false,
           "qualifiers": [],
@@ -2045,9 +2017,7 @@
             "type": "null"
           }
         ],
-        "default": {
-          "en": "Asset interfaces mapping configuration"
-        },
+        "default": null,
         "title": "Display Name"
       },
       "id": {
@@ -17473,9 +17443,7 @@
                 "type": "null"
               }
             ],
-            "default": {
-              "en": "Enum"
-            },
+            "default": null,
             "title": "Display Name"
           },
           "id_short": {

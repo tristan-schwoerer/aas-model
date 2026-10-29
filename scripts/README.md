@@ -42,7 +42,9 @@ rather than silently generating a partial package.
   its items are homogeneous.
 - Semantic IDs, supplemental semantic IDs, value types, content types, the
   English description and the display name are kept on the generated classes.
-  A template's example values (a Property's value, a relationship's endpoints,
+  The display name labels the template element (`Capability Set`), so it is a
+  `TEMPLATE_DISPLAY_NAME` ClassVar, not an instance default: an instance is
+  shown by its idShort, and the template export carries the label. A template's example values (a Property's value, a relationship's endpoints,
   an Entity's `globalAssetId`) are not defaults. Pydantic field/type name
   collisions use `_t: TypeAlias` aliases.
 - Qualifiers that restrict a value are kept: `FormChoices`/`Enumeration` as

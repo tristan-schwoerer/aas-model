@@ -309,7 +309,7 @@ class enum(SubmodelElementList):
     id_short: AasIdString = "enum"
     semantic_id: str = "https://www.w3.org/2019/wot/json-schema#enum"
     description: str = "Provides a list of restricted set of values that the asset can provide as datapoint value."
-    display_name: Optional[Dict[str, str]] = {"en": "Enum"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Enum"}
     type_value_list_element: str = "Property"
     value_type_list_element: str = "xs:string"
     item_type: ClassVar = enumItem

@@ -15,39 +15,39 @@ class CapabilityComment(MultiLanguageProperty):
     id_short: AasIdString = "CapabilityComment"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/CapabilityComment/1/0"
     description: str = "Individual comment of the capability."
-    display_name: Optional[Dict[str, str]] = {"en": "Capability Comment"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Capability Comment"}
 
 class SameProperty(RelationshipElement):
     id_short: AasIdString = "SameProperty"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/SameProperty/1/0"
     description: str = "Relationship of the Property described in the Property container as first element and the identical property as second element in another Submodel or an external information source."
-    display_name: Optional[Dict[str, str]] = {"en": "Same Property"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Same Property"}
 
 class PropertyRange(Range):
     id_short: AasIdString = "PropertyRange"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityPropertyEnumType/Range/1/0"
     description: str = "Range made of min and max values forming an interval. A valueId shall be set to define the semantic for the values."
-    display_name: Optional[Dict[str, str]] = {"en": "Property Range"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Property Range"}
     value_type: str = "xs:string"
 
 class PropertyProperty(Property):
     id_short: AasIdString = "PropertyProperty"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityPropertyType/Property/1/0"
     description: str = "Property with a value describing an information data point. A valueId shall be set to define the semantic for the value."
-    display_name: Optional[Dict[str, str]] = {"en": "Property Property"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Property Property"}
     value_type: str = "xs:string"
 
 class PropertyMultiLanguageProperty(MultiLanguageProperty):
     id_short: AasIdString = "PropertyMultiLanguageProperty"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityPropertyType/MultiLanguageProperty/1/0"
     description: str = "Property with a value for one or more language entries with corresponding text describing an information data point. A valueId shall be set to define the semantic for the value."
-    display_name: Optional[Dict[str, str]] = {"en": "Property Multi Language Property"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Property Multi Language Property"}
 
 class PropertySubmodelList(SubmodelElementList):
     id_short: AasIdString = "PropertySubmodelList"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityPropertyType/SubmodelElementList/1/0"
     description: str = "A list of one or more elements defined by only the enum type CapabilityPropertyType. "
-    display_name: Optional[Dict[str, str]] = {"en": "Property Submodel List"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Property Submodel List"}
     type_value_list_element: str = "SubmodelElement"
     ITEM_CARDINALITY: ClassVar[str] = 'ZeroToMany'
     value: List[Any] = []
@@ -56,13 +56,13 @@ class PropertyComment(MultiLanguageProperty):
     id_short: AasIdString = "PropertyComment"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/PropertyComment/1/0"
     description: str = "General description of the property."
-    display_name: Optional[Dict[str, str]] = {"en": "Property Comment"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Property Comment"}
 
 class PropertyContainer(SubmodelElementCollection):
     id_short: AasIdString = "PropertyContainer"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/PropertyContainer/1/0"
     description: str = "Information for a certain property as defined by CapabilityPropertyType and its descriptive elements."
-    display_name: Optional[Dict[str, str]] = {"en": "Property Container"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Property Container"}
     SameProperty: Dict[str, SameProperty_t] = {}
     PropertyRange: Dict[str, PropertyRange_t] = {}
     PropertyProperty: Dict[str, PropertyProperty_t] = {}
@@ -74,32 +74,32 @@ class PropertySet(SubmodelElementCollection):
     id_short: AasIdString = "PropertySet"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/PropertySet/1/0"
     description: str = "Set of properties describing the capability in more detail, if existing."
-    display_name: Optional[Dict[str, str]] = {"en": "Property Set"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Property Set"}
     PropertyContainer: Dict[str, PropertyContainer_t] = _Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 1})
 
 class CapabilityRealizedBy(RelationshipElement):
     id_short: AasIdString = "CapabilityRealizedBy"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/CapabilityRealizedBy/1/0"
     description: str = "Relationship between the Capability element in the CapabilityContainer as first element and a Skill implementation, not defined in this Submodel template, as second element."
-    display_name: Optional[Dict[str, str]] = {"en": "Capability Realized By"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Capability Realized By"}
 
 class CapabilityComposedOf(RelationshipElement):
     id_short: AasIdString = "CapabilityComposedOf"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/CapabilityComposedOf/1/0"
     description: str = "Relationship between a composed capability as first element and one of its minimum two subordinate capabilities as second element."
-    display_name: Optional[Dict[str, str]] = {"en": "Capability Composed Of"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Capability Composed Of"}
 
 class ComposedOfComment(MultiLanguageProperty):
     id_short: AasIdString = "ComposedOfComment"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/ComposedOfComment/1/0"
     description: str = "Comment to describe the composition in human readable form."
-    display_name: Optional[Dict[str, str]] = {"en": "Composed Of Comment"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Composed Of Comment"}
 
 class ComposedOfContainer(SubmodelElementCollection):
     id_short: AasIdString = "ComposedOfContainer"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/ComposedOfContainer/1/0"
     description: str = "Container corresponding to one composition for the Capability in the CapabilityContainer."
-    display_name: Optional[Dict[str, str]] = {"en": "Composed Of Container"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Composed Of Container"}
     CapabilityComposedOf: Dict[str, CapabilityComposedOf_t] = _Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 2})
     ComposedOfComment: Optional[ComposedOfComment_t] = None
 
@@ -107,53 +107,53 @@ class ComposedOfSet(SubmodelElementCollection):
     id_short: AasIdString = "ComposedOfSet"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/ComposedOfSet/1/0"
     description: str = "If composition(s) for the Capability element in the CapabilityContainer exists, this set has to be created."
-    display_name: Optional[Dict[str, str]] = {"en": "Composed Of Set"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Composed Of Set"}
     ComposedOfContainer: Dict[str, ComposedOfContainer_t] = _Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 1})
 
 class CapabilityGeneralizedBy(RelationshipElement):
     id_short: AasIdString = "CapabilityGeneralizedBy"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/CapabilityGeneralizedBy/1/0"
     description: str = "Relationship between the Capability as first element, described in the CapabilityContainer, and a more general Capability as second element."
-    display_name: Optional[Dict[str, str]] = {"en": "Capability Generalized By"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Capability Generalized By"}
 
 class GeneralizedBySet(SubmodelElementCollection):
     id_short: AasIdString = "GeneralizedBySet"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/GeneralizedBySet/1/0"
     description: str = "If generalization(s) for the Capability element in the CapabilityContainer exists, this set has to be created."
-    display_name: Optional[Dict[str, str]] = {"en": "Generalized By Set"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Generalized By Set"}
     CapabilityGeneralizedBy: Dict[str, CapabilityGeneralizedBy_t] = _Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 1})
 
 class BasicConstraint(Property):
     id_short: AasIdString = "BasicConstraint"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/PropertyConstraintType/BasicConstraint/1/0"
     description: str = "Property element which can be used to validate the constraint for the considered Properties in this PropertyConstraintContainer against other properties."
-    display_name: Optional[Dict[str, str]] = {"en": "Basic Constraint"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Basic Constraint"}
     value_type: str = "xs:string"
 
 class CustomConstraint(DynamicSubmodelElementCollection):
     id_short: AasIdString = "CustomConstraint"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/PropertyConstraintType/CustomConstraint/1/0"
     description: str = "SubmodelElement which can be used to validate the constraint for the considered Properties in this PropertyConstraintContainer against other properties. This can be freely defined for the purpose of constraining a property and is not specified in this Submodel Template."
-    display_name: Optional[Dict[str, str]] = {"en": "Custom Constraint"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Custom Constraint"}
 
 class OCLConstraint(File):
     id_short: AasIdString = "OCLConstraint"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/PropertyConstraintType/OCLConstraint/1/0"
     description: str = "Object Contraint Language (OCL) as File element which can be used to validate the constraint for the considered Properties in this PropertyConstraintContainer against other properties."
-    display_name: Optional[Dict[str, str]] = {"en": "OCL Constraint"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "OCL Constraint"}
     content_type: str = "application/octet-stream"
 
 class OperationConstraint(ReferenceElement):
     id_short: AasIdString = "OperationConstraint"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/PropertyConstraintType/OperationConstraint/1/0"
     description: str = "Reference to an (external) Operation element which can be used to validate the constraint for the considered Properties in this PropertyConstraintContainer against other properties."
-    display_name: Optional[Dict[str, str]] = {"en": "Operation Constraint"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Operation Constraint"}
 
 class ConstraintType(Property):
     id_short: AasIdString = "ConstraintType"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/ConstraintType/1/0"
     description: str = "Abstract Enum type of allowed SubmodelElements for these Properties constraints. Exactly one of the SubmodelElements below must be instanciated, e.g., similar to SubmodelElementList with exactly one element."
-    display_name: Optional[Dict[str, str]] = {"en": "Constraint Type"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Constraint Type"}
     value_type: str = "xs:string"
     FORM_CHOICES: ClassVar[tuple] = ('OperationConstraint', 'OCLConstraint', 'BasicConstraint', 'CustomConstraint')
 
@@ -161,27 +161,27 @@ class PropertyConditionalType(Property):
     id_short: AasIdString = "PropertyConditionalType"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/PropertyConditionalType/1/0"
     description: str = "Defines the type of the property conditions as defined in the ConceptDescription with the same name (PropertyConditionalType)."
-    display_name: Optional[Dict[str, str]] = {"en": "Property Conditional Type"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Property Conditional Type"}
     value_type: str = "xs:string"
 
 class ConstraintHasProperty(RelationshipElement):
     id_short: AasIdString = "ConstraintHasProperty"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/ConstraintHasProperty/1/0"
     description: str = "Relates the PropertyConstraint as first element to a Property from a PropertyContainer as second element."
-    display_name: Optional[Dict[str, str]] = {"en": "Constraint Has Property"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Constraint Has Property"}
 
 class ConstraintPropertyRelations(SubmodelElementCollection):
     id_short: AasIdString = "ConstraintPropertyRelations"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/ConstraintPropertyRelations/1/0"
     description: str = "Contains all relationships for the constraint in the PropertyConstraintContainer."
-    display_name: Optional[Dict[str, str]] = {"en": "Constraint Property Relations"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Constraint Property Relations"}
     ConstraintHasProperty: Dict[str, ConstraintHasProperty_t] = _Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 1})
 
 class PropertyConstraintContainer(SubmodelElementCollection):
     id_short: AasIdString = "PropertyConstraintContainer"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/PropertyConstraintContainer/1/0"
     description: str = "If one or more constraints exist for a Capability Property, then for every constraint a PropertyConstraintContainer has to be created."
-    display_name: Optional[Dict[str, str]] = {"en": "Property Constraint Container"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Property Constraint Container"}
     IDTA_ONE_OF: ClassVar[tuple] = ('BasicConstraint', 'CustomConstraint', 'OCLConstraint', 'OperationConstraint')
     BasicConstraint: Optional[BasicConstraint_t] = None
     CustomConstraint: Optional[CustomConstraint_t] = None
@@ -195,20 +195,20 @@ class TransitionConstrainedBy(RelationshipElement):
     id_short: AasIdString = "TransitionConstrainedBy"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/TransitionConstrainedBy/1/0"
     description: str = "Relates the constrained Capability as first element to a constraining Capability from another CapabilityContainer as second element."
-    display_name: Optional[Dict[str, str]] = {"en": "Transition Constrained By"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Transition Constrained By"}
 
 class TransitionConditionalType(Property):
     id_short: AasIdString = "TransitionConditionalType"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/TransitionConditionalType/1/0"
     description: str = "Defines the element TransitionConstrainedBy of TransitionConstraintType."
-    display_name: Optional[Dict[str, str]] = {"en": "Transition Conditional Type"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Transition Conditional Type"}
     value_type: str = "xs:string"
 
 class TransitionConstraintContainer(SubmodelElementCollection):
     id_short: AasIdString = "TransitionConstraintContainer"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/TransitionConstraintContainer/1/0"
     description: str = "If one or more constraints exist for a Capability, then for every transitional constraint a TransitionConstraintContainer has to be created."
-    display_name: Optional[Dict[str, str]] = {"en": "Transition Constraint Container"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Transition Constraint Container"}
     TransitionConstrainedBy: TransitionConstrainedBy_t
     TransitionConditionalType: TransitionConditionalType_t
 
@@ -216,7 +216,7 @@ class ConstraintSet(SubmodelElementCollection):
     id_short: AasIdString = "ConstraintSet"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/ConstraintSet/1/0"
     description: str = "If constraint(s) for the Capability element in the CapabilityContainer exists, this set has to be created."
-    display_name: Optional[Dict[str, str]] = {"en": "Constraint Set"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Constraint Set"}
     PropertyConstraintContainer: Dict[str, PropertyConstraintContainer_t] = {}
     TransitionConstraintContainer: Dict[str, TransitionConstraintContainer_t] = {}
 
@@ -224,7 +224,7 @@ class CapabilityRelations(SubmodelElementCollection):
     id_short: AasIdString = "CapabilityRelations"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/CapabilityRelations/1/0"
     description: str = "Collection of relationships for the capability, if existing."
-    display_name: Optional[Dict[str, str]] = {"en": "Capability Relations"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Capability Relations"}
     CapabilityRealizedBy: Dict[str, CapabilityRealizedBy_t] = {}
     ComposedOfSet: Optional[ComposedOfSet_t] = None
     GeneralizedBySet: Dict[str, GeneralizedBySet_t] = {}
@@ -234,7 +234,7 @@ class CapabilityContainer(SubmodelElementCollection):
     id_short: AasIdString = "CapabilityContainer"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/CapabilityContainer/1/0"
     description: str = "A Container for one capability and all its additional descriptive elements."
-    display_name: Optional[Dict[str, str]] = {"en": "Capability Container"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Capability Container"}
     Capability: Capability_t
     CapabilityComment: Optional[CapabilityComment_t] = None
     PropertySet: Dict[str, PropertySet_t] = {}
@@ -244,14 +244,14 @@ class CapabilitySet(SubmodelElementCollection):
     id_short: AasIdString = "CapabilitySet"
     semantic_id: str = "https://admin-shell.io/idta/CapabilityDescription/CapabilitySet/1/0"
     description: str = "A Set of CapabilityContainer for a Use Case for the asset."
-    display_name: Optional[Dict[str, str]] = {"en": "Capability Set"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Capability Set"}
     CapabilityContainer: Dict[str, CapabilityContainer_t] = _Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 1})
 
 class CapabilityDescription(Submodel):
     id_short: AasIdString = "CapabilityDescription"
     semantic_id: str = "https://admin-shell.io/idta/SubmodelTemplate/CapabilityDescription/1/0"
     description: str = "Definition of the Submodel CapabilityDescription identified by its semanticId. The Submodel idShort can be picked freely."
-    display_name: Optional[Dict[str, str]] = {"en": "Submodel Template Capability Description"}
+    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = {"en": "Submodel Template Capability Description"}
     VERSION: ClassVar[str] = "1"
     REVISION: ClassVar[str] = "0"
     CapabilitySet: Dict[str, CapabilitySet_t] = _Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 1})

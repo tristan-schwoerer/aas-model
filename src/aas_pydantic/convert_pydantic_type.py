@@ -7,7 +7,8 @@ The template is what the class would have been generated from (scripts/README.md
   ``ZeroToMany``/``OneToMany``/``TwoToMany`` by its minimum (``Recursive`` where it contains itself) with
   its ``AllowedIdShort``; a member of ``IDTA_ONE_OF`` is mandatory, as templates write alternatives;
 - a list is a SubmodelElementList with one example item, its list attributes kept;
-- a leaf keeps its semanticId, supplementalSemanticIds, description, displayName, valueType, contentType,
+- a leaf keeps its semanticId, supplementalSemanticIds, description, displayName (``TEMPLATE_DISPLAY_NAME``,
+  which labels the template element and not its instances), valueType, contentType,
   its default value as the example and ``FORM_CHOICES``/``ALLOWED_RANGE`` as ``FormChoices`` and
   ``SMT/AllowedRange``;
 - a class's base classes are part of it: a template is complete, not a delta to the one it extends.
@@ -52,7 +53,7 @@ def convert_model_to_submodel_template(model_type: type[aas_model.Submodel], ide
         semantic_id=convert_util.get_semantic_id(prototype),
         supplemental_semantic_id=_supplemental(prototype),
         description=convert_util.get_basyx_description_from_model(prototype),
-        display_name=convert_util.get_basyx_display_name_from_model(prototype),
+        display_name=_display_name(model_type, prototype),
         administration=model.AdministrativeInformation(version=version, revision=revision)
         if version and revision else None,
         submodel_element=_children(model_type, (model_type,)),
@@ -146,7 +147,7 @@ def _element(cls: type, id_short: Optional[str], stack: tuple, recursive: bool =
         semantic_id=convert_util.get_semantic_id(prototype),
         supplemental_semantic_id=_supplemental(prototype),
         description=convert_util.get_basyx_description_from_model(prototype),
-        display_name=convert_util.get_basyx_display_name_from_model(prototype),
+        display_name=_display_name(cls, prototype),
         qualifier=_make_qualifiers(getattr(prototype, "qualifiers", None) or []) + _restrictions(cls),
     )
     children = [] if recursive else None
@@ -222,6 +223,11 @@ def _basyx_class(cls: Optional[type]) -> Optional[type]:
 
 
 # ── Metadata ─────────────────────────────────────────────────────────────────
+
+def _display_name(cls: type, prototype: BaseModel) -> Optional[model.MultiLanguageNameType]:
+    names = getattr(prototype, "display_name", None) or getattr(cls, "TEMPLATE_DISPLAY_NAME", None)
+    return model.MultiLanguageNameType(dict(names)) if names else None
+
 
 def _supplemental(prototype: BaseModel) -> list:
     return [_make_external_reference(s) for s in (getattr(prototype, "supplemental_semantic_ids", None) or [])]

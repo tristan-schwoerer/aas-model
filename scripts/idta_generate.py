@@ -135,7 +135,7 @@ def sid_namespace_suffix(base_name: str, sid: str) -> str:
 
 
 # Metadata lines that describe an element rather than define it.
-_DESCRIPTIVE = ("    description:", "    display_name:")
+_DESCRIPTIVE = ("    description:", "    TEMPLATE_DISPLAY_NAME:")
 
 
 def _structural(meta) -> tuple:
@@ -438,9 +438,12 @@ def metadata_lines(el: dict, *, include_empty_semantic_id: bool = True) -> list:
     desc = extract_description(el)
     if desc:
         lines.append(f'    description: str = {json.dumps(desc)}')
+    # The template's display name labels the template element (``Capability Set``), not an instance of it: an
+    # instance named by its idShort would show that label in its place. The template export restores it.
     display_name = extract_display_name(el)
     if display_name:
-        lines.append(f'    display_name: Optional[Dict[str, str]] = {json.dumps(display_name, ensure_ascii=False)}')
+        lines.append(f'    TEMPLATE_DISPLAY_NAME: ClassVar[Dict[str, str]] = '
+                     f'{json.dumps(display_name, ensure_ascii=False)}')
     supp = extract_supplemental_semantic_ids(el)
     if supp:
         lines.append(f'    supplemental_semantic_ids: List[str] = {json.dumps(supp)}')
