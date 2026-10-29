@@ -9,122 +9,70 @@ from basyx.aas.model import datatypes
 
 
 from aas_pydantic.convert_util import (
-    is_attribute_from_basyx_model_immutable,
     get_semantic_id_value_of_model,
-    repatch_id_short_to_temp_attribute,
-    unpatch_id_short_from_temp_attribute,
 )
 
 
-def get_types_name_dict(
-    types: typing.List[typing.Type[aas_model.AssetAdministrationShell | aas_model.Submodel]],
-) -> typing.Dict[str, type]:
-    """
-    Returns a dictionary with the type names as keys and the types as values.
+def convert_store_to_model(
+    obj_store: model.DictIdentifiableStore, model_type: type[aas_model.AAS], aas_id: typing.Optional[str] = None,
+) -> aas_model.AAS:
+    """The AAS in ``obj_store`` (the one with ``aas_id``, or its only one) as ``model_type``, or the subclass of it
+    its class marker names (a ``CappingStation`` read as a ``Resource``), with its submodels.
 
-    Args:
-        types (typing.List[type]): List of types to create the dictionary from.
-
-    Returns:
-        typing.Dict[str, type]: Dictionary with the type names as keys and the types as values.
-    """
-    types_name_dict = {t.__name__.split(".")[-1]: t for t in types}
-    for top_level_type in types:
-        if not issubclass(top_level_type, aas_model.AAS):
+    The shell's markers name the field holding each submodel; a submodel is that field's class, or the subclass
+    of it its own class marker names (an ``OperationalMqttInterfaces`` in a ``DmpAssetInterfacesDescription``
+    field). The asset's type, specific asset ids and the template the AAS derives from are read back too."""
+    shells = [o for o in obj_store if isinstance(o, model.AssetAdministrationShell)
+              and (aas_id is None or o.id == aas_id)]
+    if len(shells) != 1:
+        raise ValueError(f"expected one AAS{f' with id {aas_id}' if aas_id else ''}, found {len(shells)}")
+    shell = shells[0]
+    model_type = _marked_subclass(model_type, shell)
+    by_id = {o.id: o for o in obj_store}
+    data = get_initial_dict_for_model_instantiation(shell)
+    info = shell.asset_information
+    if info.asset_type:
+        data["asset_type"] = str(info.asset_type)
+    if info.specific_asset_id:
+        data["specific_asset_ids"] = {sid.name: sid.value for sid in info.specific_asset_id}
+    if shell.derived_from is not None:
+        data["derived_from"] = shell.derived_from.key[0].value
+    for reference in shell.submodel:
+        submodel = by_id.get(reference.key[0].value)
+        if submodel is None:
             continue
-        for attribute_name, attribute_type in top_level_type.model_fields.items():
-            annotation = attribute_type.annotation
-            if typing.get_origin(annotation) is typing.Annotated:
-                annotation = typing.get_args(annotation)[0]
-            if typing.get_origin(annotation) is typing.Union:
-                for contained_type in typing.get_args(annotation):
-                    if typing.get_origin(contained_type) is typing.Annotated:
-                        contained_type = typing.get_args(contained_type)[0]
-                    if not (isinstance(contained_type, type) and issubclass(contained_type, aas_model.Submodel)):
-                        continue
-                    types_name_dict[contained_type.__name__.split(".")[-1]] = (
-                        contained_type
-                    )
-                continue
-            if not (isinstance(annotation, type) and issubclass(annotation, aas_model.Submodel)):
-                continue
-            types_name_dict[annotation.__name__.split(".")[-1]] = annotation
-    return types_name_dict
+        [field] = convert_util.get_attribute_name_from_basyx_model(shell, submodel.id)
+        data[field] = convert_submodel_to_model_instance(submodel, _submodel_class(model_type, field, submodel))
+    return _validated(model_type, data)
 
 
-def convert_object_store_to_pydantic_models(
-    obj_store: model.DictIdentifiableStore, types: typing.List[type]
-) -> typing.List[aas_model.AssetAdministrationShell]:
-    """
-    Converts an object store with AAS and submodels to pydantic models, representing the original data structure.
-
-    Args:
-        obj_store (model.DictIdentifiableStore): Object store with AAS and submodels
-        types (typing.List[type]): List of types to create the pydantic models from. Can be only top level types.
-
-    Returns:
-        typing.List[aas_model.AssetAdministrationShell]: List of pydantic models
-    """
-    type_name_dict = get_types_name_dict(types)
-
-    pydantic_submodels: typing.List[aas_model.Submodel] = []
-    for identifiable in obj_store:
-        if not isinstance(identifiable, model.Submodel):
-            continue
-        class_name = convert_util.get_class_name_from_basyx_model(identifiable)
-        if not class_name in type_name_dict:
-            pass
-        pydantic_submodel = convert_submodel_to_model_instance(
-            identifiable, type_name_dict[class_name]
-        )
-        pydantic_submodels.append(pydantic_submodel)
-
-    pydantic_aas_list: typing.List[aas_model.AssetAdministrationShell] = []
-    for identifiable in obj_store:
-        if not isinstance(identifiable, model.AssetAdministrationShell):
-            continue
-        class_name = convert_util.get_class_name_from_basyx_model(identifiable)
-        if not class_name in type_name_dict:
-            pass
-        pydantic_aas = convert_aas_to_pydantic_model_instance(
-            identifiable, pydantic_submodels, type_name_dict[class_name]
-        )
-        pydantic_aas_list.append(pydantic_aas)
-
-    return pydantic_aas_list
+def _submodel_class(model_type: type, field: str, submodel: model.Submodel) -> type:
+    """The class of the submodel a field holds: the field's, or the subclass of it the submodel's class marker
+    names."""
+    annotation = aas_model._resolve_annotation(aas_model._field_annotation(model_type, field))
+    members = typing.get_args(annotation) if typing.get_origin(annotation) in (typing.Union, aas_model._UnionType) \
+        else (annotation,)
+    declared = [m for m in members if isinstance(m, type) and issubclass(m, aas_model.Submodel)]
+    if len(declared) != 1:
+        raise ValueError(f"{model_type.__name__}.{field} holds no single submodel class")
+    return _marked_subclass(declared[0], submodel)
 
 
-def convert_aas_to_pydantic_model_instance(
-    aas: model.AssetAdministrationShell,
-    pydantic_submodels: typing.List[aas_model.Submodel],
-    model_type: type = aas_model.AssetAdministrationShell,
-) -> aas_model.AssetAdministrationShell:
-    """
-    Converts an AAS to a Pydantic model.
+def _marked_subclass(cls: type, identifiable: model.Identifiable) -> type:
+    """``cls``, or the subclass of it the identifiable's class marker names."""
+    try:
+        name = convert_util.get_class_name_from_basyx_model(identifiable)
+    except ValueError:
+        return cls
+    marked = [sub for sub in _subclasses(cls) if sub.__name__ == name]
+    return marked[0] if len(marked) == 1 else cls
 
-    Args:
-        aas (model.AssetAdministrationShell): AAS to convert
 
-    Returns:
-        aas_model.AssetAdministrationShell: Pydantic model of the asset administration shell
-    """
-    dict_model_instantiation = get_initial_dict_for_model_instantiation(aas)
-    aas_submodel_ids = [sm.get_identifier() for sm in aas.submodel]
-
-    for sm in pydantic_submodels:
-        if not sm.id in aas_submodel_ids:
-            continue
-        attribute_names_of_submodel = (
-            convert_util.get_attribute_names_from_basyx_template(aas, sm.id)
-        )
-        if len(attribute_names_of_submodel) > 1:
-            raise ValueError(
-                "Multiple attribute names found for submodel:",
-                attribute_names_of_submodel,
-            )
-        attribute_name_of_submodel = attribute_names_of_submodel[0]
-        dict_model_instantiation.update({attribute_name_of_submodel: sm.model_dump()})
-    return TypeAdapter(model_type).validate_python(dict_model_instantiation)
+def _subclasses(cls: type) -> list:
+    found = [cls]
+    for sub in cls.__subclasses__():
+        found.extend(_subclasses(sub))
+    return found
 
 
 def get_submodel_element_value(
@@ -162,35 +110,13 @@ def get_submodel_element_value(
     elif isinstance(sm_element, model.Operation):
         return convert_operation_to_pydantic_model(sm_element)
     elif isinstance(sm_element, model.Entity):
-        return convert_entity_to_pydantic_model(sm_element, attribute_type)
+        return _container_element_to_pydantic(sm_element, attribute_type)
     elif isinstance(sm_element, model.File):
         return convert_file_to_pydantic_model(sm_element)
     elif isinstance(sm_element, model.Blob):
         return convert_blob_to_pydantic_model(sm_element)
     else:
         raise NotImplementedError("Type not implemented:", type(sm_element))
-
-
-def get_model_instantiation_dict_from_submodel_element(
-    attribute_name: str, attribute_value: typing.Any
-) -> typing.Dict[str, typing.Any]:
-    """
-    Converts a SubmodelElement to a dict.
-
-    Args:
-        attribute_name (str): Name of the attribute to create in the dictionary.
-        sm_element (model.SubmodelElement): SubmodelElement to convert.
-
-    Returns:
-        dict: Dictionary that can be used to instantiate a Pydantic model.
-    """
-    if isinstance(attribute_value, BaseModel):
-        attribute_value = attribute_value.model_dump()
-    elif isinstance(attribute_value, (list, set, tuple)) and any(
-        isinstance(element, BaseModel) for element in attribute_value
-    ):
-        attribute_value = [element.model_dump() for element in attribute_value]
-    return {attribute_name: attribute_value}
 
 
 def get_initial_dict_for_model_instantiation(
@@ -210,12 +136,14 @@ def get_initial_dict_for_model_instantiation(
         typing.Dict[str, typing.Any]: Dictionary that can be used to instantiate a Pydantic model.
     """
     model_instantiation_dict = {
-        "id_short": basyx_model.id_short,
+        "id_short": convert_util.own_id_short(basyx_model),
         "description": convert_util.get_str_description(basyx_model.description),
         "display_name": convert_util.get_str_display_name(
             getattr(basyx_model, "display_name", None)
         ),
     }
+    if model_instantiation_dict["id_short"] is None:
+        del model_instantiation_dict["id_short"]  # an unnamed list item: its class names it
     if isinstance(basyx_model, model.Identifiable):
         model_instantiation_dict["id"] = str(basyx_model.id)
     if isinstance(basyx_model, model.HasSemantics):
@@ -245,6 +173,36 @@ def _is_container_style_model(model_type, container_key: str) -> bool:
     return True
 
 
+def _marked_class(basyx_el: model.SubmodelElement, expected_cls=None):
+    """The pydantic class an element's class marker names, or ``None``. The marker holds only the class's name,
+    which several templates may use: it decides only when exactly one class of that name fits the element (its
+    kind, the class it is declared as, its semanticId)."""
+    if not basyx_el.embedded_data_specifications:
+        return None
+    try:
+        name = convert_util.get_class_name_from_basyx_model(basyx_el)
+    except ValueError:
+        return None
+    candidates = [cls for cls in aas_model._ELEMENT_CLASSES_BY_NAME.get(name, ())
+                  if _same_kind(cls, basyx_el) and (expected_cls is None or issubclass(cls, expected_cls))]
+    if len(candidates) > 1:
+        sid = convert_util.get_semantic_id_value_of_model(basyx_el)
+        candidates = [cls for cls in candidates if cls.model_fields["semantic_id"].default == sid]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _same_kind(cls: type, basyx_el: model.SubmodelElement) -> bool:
+    """Whether a pydantic element class is the kind of the BaSyx element (an SMC class for an SMC, …)."""
+    kinds = ((aas_model.SubmodelElementList, model.SubmodelElementList), (aas_model.Entity, model.Entity),
+             (aas_model.SubmodelElementCollection, model.SubmodelElementCollection),
+             (aas_model.Operation, model.Operation), (aas_model.Property, model.Property),
+             (aas_model.MultiLanguageProperty, model.MultiLanguageProperty), (aas_model.Range, model.Range),
+             (aas_model.ReferenceElement, model.ReferenceElement),
+             (aas_model.RelationshipElement, model.RelationshipElement),
+             (aas_model.File, model.File), (aas_model.Blob, model.Blob), (aas_model.Capability, model.Capability))
+    return any(issubclass(cls, pydantic_kind) and isinstance(basyx_el, basyx_kind) for pydantic_kind, basyx_kind in kinds)
+
+
 def _resolve_element_cls(
     basyx_el: model.SubmodelElement,
     expected_cls=None,
@@ -259,6 +217,9 @@ def _resolve_element_cls(
     basyx type.  ``None`` for plain leaves (Property, ReferenceElement, …)
     whose semanticId has no registered class.
     """
+    marked = _marked_class(basyx_el, expected_cls)
+    if marked is not None:
+        return marked
     if expected_cls is not None:
         return expected_cls
     sid = convert_util.get_semantic_id_value_of_model(basyx_el)
@@ -273,17 +234,6 @@ def _resolve_element_cls(
     if isinstance(basyx_el, model.SubmodelElementList):
         return aas_model.SubmodelElementList
     return None
-
-
-def _resolve_values_cls(cls, container_key: str):
-    """The values-model class named by *cls*'s *container_key* field (e.g.
-    ``EntryNodeValues`` for ``EntryNode.statements``), or ``None``."""
-    try:
-        hints = typing.get_type_hints(cls, include_extras=True)
-        ann = hints.get(container_key)
-    except Exception:
-        ann = cls.model_fields[container_key].annotation
-    return ann if isinstance(ann, type) else None
 
 
 def _element_cls_sid(cls) -> str:
@@ -365,12 +315,53 @@ def _multi_fields_by_sid(values_cls):
 def _multi_element_cls(values_cls, field: str):
     """Element class of a ``Dict[str, E]`` field, or ``None``.
 
-    For a UNION-typed container the first element class is returned; the
-    back-conversion path then re-dispatches per element (see
-    ``_best_fit_subclass``), so a Property and an SMC can share one map.
+    For a UNION-typed container the first element class is returned; callers
+    that dispatch per element narrow the union by the element's kind
+    (``_candidate_for``), so a Property and an SMC can share one map.
     """
     classes = _multi_element_classes(values_cls, field)
     return classes[0] if classes else None
+
+
+_METADATA = frozenset({*convert_util.META_FIELDS, "asset_type", "derived_from", "specific_asset_ids"})
+
+
+def _holds_elements(annotation) -> bool:
+    """Whether a field holds elements or submodels: one, a union of them, or a map or list of them."""
+    annotation = aas_model._resolve_annotation(annotation)
+    origin = typing.get_origin(annotation)
+    if origin in (dict, list):
+        annotation = aas_model._container_item_type(annotation)
+        origin = typing.get_origin(annotation)
+    members = typing.get_args(annotation) if origin in (typing.Union, aas_model._UnionType) else (annotation,)
+    return any(isinstance(m, type) and issubclass(m, (aas_model.SubmodelElement, aas_model.Submodel))
+               for m in members)
+
+
+def _complete(model_type: type, data: dict) -> dict:
+    """``data`` with every element field the AAS does not hold set empty (an empty map or list, or none), so a
+    class default does not come back in its place (an empty ``parameter`` map is not the class's Location)."""
+    data = dict(data)
+    for name, field in model_type.model_fields.items():
+        if name in data or name in _METADATA or field.is_required():
+            continue
+        annotation = aas_model._field_annotation(model_type, name)
+        if not _holds_elements(annotation):
+            continue
+        origin = typing.get_origin(aas_model._resolve_annotation(annotation))
+        data[name] = {} if origin is dict else [] if origin is list else None
+    return data
+
+
+def _validated(model_type: type, data: dict):
+    return TypeAdapter(model_type).validate_python(_complete(model_type, data))
+
+
+def _candidate_for(candidates: list, basyx_el: model.SubmodelElement):
+    """The one class of a union-typed map that is the element's kind (``VariableProp`` for a Property where the
+    map holds ``VariableProp | VariableItem``), else ``None``."""
+    fitting = [cls for cls in candidates if isinstance(cls, type) and _same_kind(cls, basyx_el)]
+    return fitting[0] if len(fitting) == 1 else None
 
 
 def _multi_element_classes(values_cls, field: str) -> list:
@@ -497,72 +488,13 @@ def _container_named_field_data(cls, basyx_children):
         if len(fields) == 1:
             # As in _container_children_data: a union-typed map must not pin
             # its first class; the semanticId registry resolves each child.
-            candidates = _multi_element_classes(cls, fields[0])
-            elem_cls = candidates[0] if len(candidates) == 1 else None
+            elem_cls = _candidate_for(_multi_element_classes(cls, fields[0]), c)
             out.setdefault(fields[0], {})[c.id_short] = _container_element_to_pydantic(
                 c, expected_cls=elem_cls
             )
         else:
             out[c.id_short] = _container_element_to_pydantic(c)
     return out
-
-
-def _best_fit_subclass(cls, basyx_el):
-    """A registered subclass of *cls* whose DIRECT named element fields match
-    the basyx element's children (structural best-fit).
-
-    Recovers concrete container subclasses (e.g. ``Position`` living in a
-    ``Dict[str, ParameterItem]``) when the element's semanticId is a
-    config-supplied value not registered to any class — the semanticId can
-    therefore not resolve the concrete type, but the child id_shorts can.
-    The class matching the most child fields wins; ``None`` when nothing
-    fits."""
-    if not isinstance(basyx_el, (model.Entity, model.SubmodelElementCollection)):
-        return None
-    children = {
-        c.id_short
-        for c in (
-            basyx_el.value
-            if isinstance(basyx_el, model.SubmodelElementCollection)
-            else basyx_el.statement
-        )
-    }
-    if not children:
-        return None
-    # Direct element field names of the (base) class — the subclass must ADD
-    # element fields beyond these (e.g. Position adds x/y/yaw over
-    # ParameterItem); inherited/overridden base fields are not distinguishing.
-    base_names = _direct_element_field_names(cls)
-    best = None
-    best_count = -1
-    for classes in aas_model._SEMANTIC_ID_REGISTRY.values():
-        for cand in classes if isinstance(classes, list) else [classes]:
-            if cand is cls or not issubclass(cand, cls):
-                continue
-            names = _direct_element_field_names(cand)
-            added = names - base_names
-            if not added or not added <= children or len(added) <= best_count:
-                continue
-            best = cand
-            best_count = len(added)
-    return best
-
-
-def _direct_element_field_names(cls):
-    """Direct (named) SubmodelElement-typed field names of *cls* (meta keys
-    excluded, Optional unwrapped)."""
-    try:
-        hints = typing.get_type_hints(cls, include_extras=True)
-    except Exception:
-        hints = {k: v.annotation for k, v in cls.model_fields.items()}
-    names = set()
-    for fname, ann in hints.items():
-        if fname in aas_model._ELEMENT_META_KEYS:
-            continue
-        ann = _unwrap_optional(ann)
-        if _named_element_types(ann):
-            names.add(fname)
-    return names
 
 
 def _container_data_for(basyx_el, cls):
@@ -688,8 +620,7 @@ def _container_children_data(basyx_children, values_cls):
             # A union-typed container (flat Property + grouped SMC in one map)
             # must not pin the first candidate: let the semanticId registry
             # resolve each child to its own class.
-            candidates = _multi_element_classes(values_cls, field)
-            elem_cls = candidates[0] if len(candidates) == 1 else None
+            elem_cls = _candidate_for(_multi_element_classes(values_cls, field), c)
             converted = _container_element_to_pydantic(c, expected_cls=elem_cls)
             key = _dict_id_short_to_key(c.id_short, _multi_key_type(values_cls, field))
             out.setdefault(field, {})[key] = converted
@@ -719,10 +650,6 @@ def _container_element_to_pydantic(
         items = []
         item_cls = getattr(cls, "item_type", None)
         for c in basyx_el.value:
-            if isinstance(c, model.SubmodelElementCollection):
-                # restore the real id_short, drop the AASd-120 temp attribute
-                # (non-mutating — the source store stays intact)
-                c = convert_util.unpatched_id_short_smc_copy(c)
             items.append(_container_element_to_pydantic(c, item_cls))
         data = {
             **_element_meta(basyx_el),
@@ -751,19 +678,9 @@ def _container_element_to_pydantic(
         # Leaf class resolved by semanticId (e.g. a typed Property subclass).
         data = get_submodel_element_value(basyx_el, None).model_dump()
     try:
-        return cls(**data)
-    except Exception as e:  # noqa: BLE001 — before failing, try a registered
-        # subclass whose DIRECT named fields match the children (e.g. Position
-        # for a ``Dict[str, ParameterItem]`` whose semanticId the config
-        # overrode).  If that does not fit either, FAIL LOUDLY — a container
-        # that no registered pydantic class can represent is a modeling
-        # mistake, not something to degrade into a lossy generic container.
-        better = _best_fit_subclass(cls, basyx_el)
-        if better is not None:
-            try:
-                return better(**(_container_data_for(basyx_el, better) or data))
-            except Exception:
-                pass
+        return cls(**_complete(cls, data))
+    except Exception as e:  # noqa: BLE001 — a container no pydantic class represents is a modeling mistake,
+        # not something to degrade into a lossy generic container: fail loudly.
         sid = convert_util.get_semantic_id_value_of_model(basyx_el)
         raise ValueError(
             f"Cannot back-convert container '{getattr(basyx_el, 'id_short', '?')}' "
@@ -803,7 +720,7 @@ def convert_submodel_to_model_instance(
         dict_model_instantiation.update(
             _container_named_field_data(model_type, sm.submodel_element)
         )
-        return TypeAdapter(model_type).validate_python(dict_model_instantiation)
+        return _validated(model_type, dict_model_instantiation)
 
     if _is_container_style_model(model_type, "submodel_element"):
         # Container-style Submodel — children populate its ``Dict[str, X]``
@@ -813,68 +730,9 @@ def convert_submodel_to_model_instance(
         dict_model_instantiation.update(
             _container_children_data(sm.submodel_element, model_type)
         )
-        return TypeAdapter(model_type).validate_python(dict_model_instantiation)
+        return _validated(model_type, dict_model_instantiation)
 
-    for sm_element in sm.submodel_element:
-        attribute_names = convert_util.get_attribute_names_from_basyx_template(
-            sm, sm_element.id_short
-        )
-        if len(attribute_names) > 1:
-            raise ValueError(
-                "Multiple attribute names found for submodel element:", attribute_names
-            )
-        attribute_name = attribute_names[0]
-        attribute_type = get_type_of_attribute(model_type, attribute_name)
-        attribute_value = get_submodel_element_value(sm_element, attribute_type)
-        sme_model_instantiation_dict = (
-            get_model_instantiation_dict_from_submodel_element(
-                attribute_name, attribute_value
-            )
-        )
-        dict_model_instantiation.update(sme_model_instantiation_dict)
-    return TypeAdapter(model_type).validate_python(dict_model_instantiation)
-
-
-def get_type_of_attribute(
-    model_type: typing.Union[type[BaseModel], typing.Union[type[BaseModel]]],
-    attribute_name: str,
-) -> typing.Union[type[BaseModel]]:
-    """
-    Returns the type of an attribute of a Pydantic model.
-
-    Tries ``attribute_name`` first, then ``{attribute_name}_ref`` as a fallback.
-    The ``_ref`` suffix is used by idta_generate.py to work around a Pydantic
-    v2.13.4 bug where circular ``Dict[str, X]`` schema generation crashes when
-    a back-reference field name collides with the class holding the Dict
-    (e.g. ``properties: Optional['properties']`` → renamed to ``properties_ref``).
-
-    Args:
-        model_type (typing.Union[type[BaseModel], typing.Union]): Pydantic model type to get the attribute type from.
-        attribute_name (str): Name of the attribute to get the type from.
-
-    Returns:
-        typing.Union[type[BaseModel], typing.Union]: Type of the attribute.
-    """
-    def _find_field(mt, name):
-        if hasattr(mt, "model_fields") and name in mt.model_fields:
-            return mt.model_fields[name].annotation
-        # _ref fallback: Pydantic circular Dict bug workaround (idta_generate.py)
-        ref_name = f"{name}_ref"
-        if hasattr(mt, "model_fields") and ref_name in mt.model_fields:
-            return mt.model_fields[ref_name].annotation
-        return None
-
-    if typing.get_origin(model_type) is typing.Union:
-        for contained_type in typing.get_args(model_type):
-            result = _find_field(contained_type, attribute_name)
-            if result is not None:
-                return result
-    result = _find_field(model_type, attribute_name)
-    if result is not None:
-        return result
-    raise ValueError(
-        f"Attribute {attribute_name} not found in model fields with attributes {list(model_type.model_fields.keys())}."
-    )
+    raise ValueError(f"{model_type.__name__} declares no element fields to read {sm.id_short!r} into")
 
 
 def convert_submodel_collection_to_pydantic_model(
@@ -901,24 +759,9 @@ def convert_submodel_collection_to_pydantic_model(
             el.id_short: _container_element_to_pydantic(el)
             for el in sm_element.value
         }
-        return TypeAdapter(model_type).validate_python(dict_model_instantiation)
+        return _validated(model_type, dict_model_instantiation)
 
-    for sub_sm_element in sm_element.value:
-        attribute_names = convert_util.get_attribute_names_from_basyx_template(
-            sm_element, sub_sm_element.id_short
-        )
-        if len(attribute_names) > 1:
-            raise ValueError(
-                "Multiple attribute names found for submodel element:", attribute_names
-            )
-        attribute_name = attribute_names[0]
-        attribute_type = get_type_of_attribute(model_type, attribute_name)
-        attribute_value = get_submodel_element_value(sub_sm_element, attribute_type)
-        dict_sme_instantiation = get_model_instantiation_dict_from_submodel_element(
-            attribute_name, attribute_value
-        )
-        dict_model_instantiation.update(dict_sme_instantiation)
-    return TypeAdapter(model_type).validate_python(dict_model_instantiation)
+    return _container_element_to_pydantic(sm_element, model_type)
 
 
 def convert_submodel_list_to_pydantic_model(
@@ -941,11 +784,7 @@ def convert_submodel_list_to_pydantic_model(
     item_type = _sml_item_type(model_type)
     for sme in sm_element.value:
         if isinstance(sme, model.SubmodelElementCollection):
-            new_sme = unpatch_id_short_from_temp_attribute(sme)
-            item = convert_submodel_collection_to_pydantic_model(
-                new_sme, model_type=item_type
-            )
-            repatch_id_short_to_temp_attribute(sme, new_sme)
+            item = convert_submodel_collection_to_pydantic_model(sme, model_type=item_type)
             sme_pydantic_models.append(item)
         else:
             sme_pydantic_models.append(
@@ -1003,13 +842,6 @@ def convert_submodel_list_to_pydantic_model(
     return sme_pydantic_models
 
 
-def _list_item_type(model_type: type[typing.Any]) -> type:
-    """Return the item type of a subscripted list/set/tuple annotation,
-    falling back to the model type itself when not subscripted."""
-    args = typing.get_args(model_type)
-    return args[0] if args else model_type
-
-
 def _sml_item_type(model_type: type[typing.Any]) -> type:
     """Item type for an SML field.
 
@@ -1023,7 +855,8 @@ def _sml_item_type(model_type: type[typing.Any]) -> type:
         ann = model_type.model_fields["value"].annotation
         args = typing.get_args(ann)
         return args[0] if args else aas_model.SubmodelElement
-    return _list_item_type(model_type)
+    args = typing.get_args(model_type)
+    return args[0] if args else model_type
 
 
 def _convert_basyx_reference_to_pydantic(
@@ -1083,8 +916,8 @@ def _convert_basyx_qualifiers(basyx_qualifiers: typing.Iterable[model.Qualifier]
 def _element_meta(basyx_el: model.SubmodelElement) -> typing.Dict[str, typing.Any]:
     """Common metadata (id_short, description, display_name, semantic_id,
     qualifiers) shared by all basyx submodel elements."""
-    return {
-        "id_short": basyx_el.id_short,
+    meta = {
+        "id_short": convert_util.own_id_short(basyx_el),
         "description": convert_util.get_str_description(basyx_el.description),
         "display_name": convert_util.get_str_display_name(
             getattr(basyx_el, "display_name", None)
@@ -1095,6 +928,9 @@ def _element_meta(basyx_el: model.SubmodelElement) -> typing.Dict[str, typing.An
             getattr(basyx_el, "qualifier", None) or ()
         ),
     }
+    if meta["id_short"] is None:
+        del meta["id_short"]  # an unnamed list item: its class names it
+    return meta
 
 
 def convert_reference_element_to_pydantic_model(
@@ -1211,43 +1047,6 @@ def convert_operation_to_pydantic_model(
         output_variable=_convert_vars(sm_element.output_variable),
         in_output_variable=_convert_vars(sm_element.in_output_variable),
     )
-
-
-def convert_entity_to_pydantic_model(
-    sm_element: model.Entity,
-    model_type: type = None,
-) -> aas_model.Entity:
-    """
-    Converts a basyx Entity to an aas_pydantic Entity.
-
-    Entity statements are mapped onto the named fields of the pydantic
-    Entity subclass (like a SubmodelElementCollection).
-    """
-    if model_type is None:
-        model_type = aas_model.Entity
-    dict_model_instantiation = get_initial_dict_for_model_instantiation(sm_element)
-    dict_model_instantiation["entity_type"] = (
-        str(sm_element.entity_type.value) if sm_element.entity_type else ""
-    )
-    dict_model_instantiation["qualifiers"] = _convert_basyx_qualifiers(
-        getattr(sm_element, "qualifier", None) or ()
-    )
-    for sub_sm_element in sm_element.statement:
-        attribute_names = convert_util.get_attribute_names_from_basyx_template(
-            sm_element, sub_sm_element.id_short
-        )
-        if len(attribute_names) > 1:
-            raise ValueError(
-                "Multiple attribute names found for submodel element:", attribute_names
-            )
-        attribute_name = attribute_names[0]
-        attribute_type = get_type_of_attribute(model_type, attribute_name)
-        attribute_value = get_submodel_element_value(sub_sm_element, attribute_type)
-        dict_sme_instantiation = get_model_instantiation_dict_from_submodel_element(
-            attribute_name, attribute_value
-        )
-        dict_model_instantiation.update(dict_sme_instantiation)
-    return TypeAdapter(model_type).validate_python(dict_model_instantiation)
 
 
 def convert_file_to_pydantic_model(sm_element: model.File) -> aas_model.File:

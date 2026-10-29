@@ -9,9 +9,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from aas_model._serde import parse_submodel_dict
-from aas_model.submodel_templates import Aimc
+from aas_json import parse_submodel_dict
+from aas_model.submodel_templates import (
+    Aimc, AimcMappingConfiguration, DmpEvaluation, DmpResponseSink, DmpResponseSource, DmpSource,
+)
 from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
+from aas_model.resource_template.references import variable_ref
+from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import SinksItem, SourcesItem
 
 HERE = Path(__file__).parent
 
@@ -50,9 +54,6 @@ def test_round_trip_preserves_semantic_id():
 
 
 def test_aimc_response_sources_and_sinks_round_trip():
-    from aas_model.resource_template.asset_interfaces_mapping_configuration import (
-        mapping_configuration, response_sink, response_source, source, sink,
-    )
     from aas_model.testing import aimc_ref
     from aas_model.resource_template import ResourceTypeAAS
     from aas_model.submodel_templates import AimcMappingConfigurations
@@ -68,15 +69,25 @@ def test_aimc_response_sources_and_sinks_round_trip():
         "{aas_id}/submodels/ControlComponentInstance", "Skills", "Halt",
         "operation")
     variables = aimc_ref("{aas_id}/submodels/Variables", "PackMLState")
-    mapping = mapping_configuration(
+    mapping = AimcMappingConfiguration(
         id_short="Halt",
-        sources=[source("Halt", operation)],
-        sinks=[sink("Halt", aimc_ref(
-            "{aas_id}/submodels/AssetInterfacesDescription", "interface_mqtt",
-            "InteractionMetadata", "actions", "Halt"))],
-        transformation="function aimc_main(sources) return sources end",
-        response_sources=[response_source("DeviceState", action_output)],
-        response_sinks=[response_sink("PackMLState", variables)],
+        Sources=[SourcesItem(SourceId="Halt", Source=operation)],
+        Sinks=[
+            SinksItem(
+                SinkId="Halt",
+                Sink=aimc_ref(
+                    "{aas_id}/submodels/AssetInterfacesDescription",
+                    "interface_mqtt",
+                    "InteractionMetadata",
+                    "actions",
+                    "Halt",
+                ),
+            )
+        ],
+        Transformation="function aimc_main(sources) return sources end",
+        ResponseSources=[DmpResponseSource(SourceId="DeviceState", Source=action_output)],
+        ResponseSinks=[DmpResponseSink(SinkId="PackMLState", Sink=variables)],
+        DefaultPollingInterval="0.0",
     )
     aimc = Aimc(id_short="AIMC", MappingConfigurations=AimcMappingConfigurations(
         value=[mapping]))
@@ -97,31 +108,42 @@ def test_aimc_response_sources_and_sinks_round_trip():
 
 
 def test_aimc_response_endpoints_are_optional():
-    from aas_model.testing import aimc_mapping
     from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import (
-        SourcesItem as Source, SinksItem as Sink, Source as SourceReference,
-        Sink as SinkReference, SourceId, SinkId,
+        SourcesItem as Source, SinksItem as Sink, Source as SourceReference, Sink as SinkReference, SourceId, SinkId,
     )
     from aas_pydantic import ModelReference, Key
 
-    mapping = aimc_mapping(
-        sources=[Source(Source=SourceReference(value=ModelReference(key=(
-            Key(type_="Submodel", value="urn:source"),))), SourceId=SourceId(value="s"))],
-        sinks=[Sink(Sink=SinkReference(value=ModelReference(key=(
-            Key(type_="Submodel", value="urn:sink"),))), SinkId=SinkId(value="t"))],
+    mapping = AimcMappingConfiguration(
+        Sources=[
+            Source(
+                Source=SourceReference(value=ModelReference(key=(Key(type_="Submodel", value="urn:source"),))),
+                SourceId=SourceId(value="s"),
+            )
+        ],
+        Sinks=[
+            Sink(
+                Sink=SinkReference(value=ModelReference(key=(Key(type_="Submodel", value="urn:sink"),))),
+                SinkId=SinkId(value="t"),
+            )
+        ],
     )
     assert mapping.ResponseSources is None
     assert mapping.ResponseSinks is None
 
 
 def test_a_sources_evaluation_serializes_inside_the_idta_source():
-    from aas_model.testing import aimc_mapping, aimc_source, aimc_sink
     from aas_pydantic import ModelReference, Key
 
-    mapping = aimc_mapping(
-        sources=[aimc_source("state", ModelReference(key=(Key(type_="Submodel", value="urn:source"),)), evaluation="OnChange"),
-                 aimc_source("plain", ModelReference(key=(Key(type_="Submodel", value="urn:plain"),)))],
-        sinks=[aimc_sink("target", ModelReference(key=(Key(type_="Submodel", value="urn:sink"),)))],
+    mapping = AimcMappingConfiguration(
+        Sources=[
+            DmpSource(
+                SourceId="state",
+                Source=ModelReference(key=(Key(type_="Submodel", value="urn:source"),)),
+                Evaluation=DmpEvaluation(Mode="OnChange"),
+            ),
+            SourcesItem(SourceId="plain", Source=ModelReference(key=(Key(type_="Submodel", value="urn:plain"),))),
+        ],
+        Sinks=[SinksItem(SinkId="target", Sink=ModelReference(key=(Key(type_="Submodel", value="urn:sink"),)))],
     )
     from aas_model.constants import AIMC_EVALUATION, AIMC_EVALUATION_MODE, BASE_URL
     evaluated = mapping.Sources.value[0]
@@ -136,7 +158,7 @@ def test_a_sources_evaluation_serializes_inside_the_idta_source():
     from aas_pydantic.convert_util import strip_temp_id_short_attributes
     from basyx.aas.adapter.json import json_serialization
 
-    serialized_mapping = aimc_mapping(sources=[mapping.Sources.value[0]], sinks=mapping.Sinks.value)
+    serialized_mapping = AimcMappingConfiguration(Sources=[mapping.Sources.value[0]], Sinks=mapping.Sinks.value)
     aimc = Aimc(id_short="AIMC", MappingConfigurations=AimcMappingConfigurations(value=[serialized_mapping]))
     asset = ResourceTypeAAS(id_short="EvaluationRoundTrip", id=f"{BASE_URL}/aas/EvaluationRoundTrip",
                             asset_type="EvaluationRoundTrip", asset_interfaces_mapping_configuration=aimc)
@@ -158,20 +180,27 @@ def test_a_sources_evaluation_serializes_inside_the_idta_source():
 
 
 def test_resource_sources_may_carry_an_evaluation():
-    from aas_model.resource_template.asset_interfaces_mapping_configuration import (
-        mapping_configuration, source, sink, operation_ref, variable_ref,
-    )
 
-    mapping = mapping_configuration(
+    mapping = AimcMappingConfiguration(
         id_short="Evaluated",
-        sources=[source("state", variable_ref("PackMLState"), evaluation="OnChange"),
-                 source("limit", variable_ref("Limit"), evaluation="ReadAtEvaluation")],
-        sinks=[sink("result", variable_ref("Result"))],
-        transformation="function aimc_main(sources) return sources end",
+        Sources=[
+            DmpSource(SourceId="state", Source=variable_ref("PackMLState"), Evaluation=DmpEvaluation(Mode="OnChange")),
+            DmpSource(
+                SourceId="limit", Source=variable_ref("Limit"), Evaluation=DmpEvaluation(Mode="ReadAtEvaluation")
+            ),
+        ],
+        Sinks=[SinksItem(SinkId="result", Sink=variable_ref("Result"))],
+        Transformation="function aimc_main(sources) return sources end",
+        DefaultPollingInterval="0.0",
     )
     assert [item.Evaluation.Mode.value for item in mapping.Sources.value] == ["OnChange", "ReadAtEvaluation"]
-    plain = mapping_configuration(id_short="Plain", sources=[source("state", variable_ref("PackMLState"))],
-                                  sinks=[sink("result", variable_ref("Result"))], transformation="")
+    plain = AimcMappingConfiguration(
+        id_short="Plain",
+        Sources=[SourcesItem(SourceId="state", Source=variable_ref("PackMLState"))],
+        Sinks=[SinksItem(SinkId="result", Sink=variable_ref("Result"))],
+        Transformation="",
+        DefaultPollingInterval="0.0",
+    )
     assert plain.Sources.value[0].Evaluation is None, "an IDTA Source becomes a DmpSource without an Evaluation"
 
 
@@ -180,9 +209,7 @@ def test_protocol_specific_endpoint_and_form_terms_round_trip():
     schemes) on the extended forms and endpoint metadata survives a round
     trip. The Modbus interface is authored as AID Annex B describes it: the
     unit ID in the base, the register address and quantity in the href."""
-    from aas_model.submodel_templates.aid import (
-        DmpActionForm, DmpModbusInterface, DmpOpcuaInterface,
-    )
+    from aas_model.submodel_templates.aid import DmpActionForm, DmpModbusInterface, DmpOpcuaInterface
     from aas_model.testing import modbus_interface, opcua_interface
     from aas_pydantic import Property
 

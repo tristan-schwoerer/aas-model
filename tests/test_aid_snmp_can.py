@@ -6,7 +6,7 @@ from basyx.aas import model
 from basyx.aas.adapter.json import json_serialization
 
 from aas_model.submodel_templates.aid import (
-    DmpAssetInterfacesDescription, DmpCanInterface, DmpForm, DmpProperties, DmpProperty, ReadOnly,
+    CanForm, DmpAssetInterfacesDescription, DmpCanInterface, DmpProperties, DmpProperty, ReadOnly,
 )
 from aas_model.testing import build_aid, snmp_interface
 from aas_pydantic.convert_pydantic_model import convert_model_to_submodel
@@ -45,7 +45,7 @@ def test_snmp_forms_carry_the_binding_terms_of_annex_e1():
 
 
 def test_can_properties_use_the_extended_interaction_metadata():
-    form = DmpForm(href=Href(value="can://0x1f2b3a00"), canv_offset=CanvOffset(value="0"),
+    form = CanForm(href=Href(value="can://0x1f2b3a00"), canv_offset=CanvOffset(value="0"),
                    canv_length=CanvLength(value="16"), canv_valueOffset=CanvValueOffset(value="-50"))
     temperature = DmpProperty(title=Title(value="Temperature"), readOnly=ReadOnly(value="true"), forms=form)
     can = DmpCanInterface(title=Title(value="can"))

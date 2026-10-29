@@ -1,27 +1,21 @@
 from __future__ import annotations
 
-import itertools
+import re
 from types import UnionType as _UnionType
-from typing import Annotated, Any, ClassVar, Dict, List, Optional, TypeVar, Union, Literal
+from typing import Annotated, Any, ClassVar, Dict, List, Optional, Union, Literal
 import typing
 
-from basyx.aas.model import (
-    AssetAdministrationShell,
-    DictIdentifiableStore,
-    Submodel
-)
 from pydantic import (
     AfterValidator,
     BaseModel,
-    Field,
     ValidationError,
     field_serializer,
+    field_validator,
     model_serializer,
     model_validator,
 )
 
 
-BasyxModels = AssetAdministrationShell | Submodel | DictIdentifiableStore
 
 
 def string_does_start_with_a_character(v: str):
@@ -33,10 +27,6 @@ def string_does_start_with_a_character(v: str):
 
 
 AasIdString = Annotated[str, AfterValidator(string_does_start_with_a_character)]
-Reference = TypeVar(
-    "Reference",
-    bound=Annotated[str, AfterValidator(string_does_start_with_a_character)],
-)
 
 
 class Referable(BaseModel):
@@ -64,10 +54,15 @@ class Identifiable(Referable):
                 "id": getattr(data, "id", ""),
                 "id_short": getattr(data, "id_short", ""),
             }
+        # A class that names itself (a submodel template: ``Nameplate``) needs no id_short.
+        default = cls.model_fields["id_short"].default
+        named = isinstance(default, str) and bool(default)
         if "id" not in data and "id_short" not in data:
-            raise ValueError("Either id or id_short must be set")
+            if not named:
+                raise ValueError("Either id or id_short must be set")
+            data = {**data, "id_short": default}
         if "id_short" not in data:
-            data["id_short"] = data["id"]
+            data["id_short"] = default if named else data["id"]
         if "id" not in data:
             data["id"] = data["id_short"]
         return data
@@ -220,14 +215,23 @@ def validate_idta_cardinality(model: BaseModel) -> None:
     Generator defaults remain empty so incomplete models can be authored and
     serialized; call this before publishing a template-conformant instance.
     """
+    one_of = getattr(type(model), "IDTA_ONE_OF", ())
+    if one_of and not any(getattr(model, name) for name in one_of):
+        raise ValueError(f"{type(model).__name__} requires one of {', '.join(one_of)}")
     for field_name, field in type(model).model_fields.items():
         value = getattr(model, field_name)
-        extra = field.json_schema_extra
-        minimum = extra.get("idta_min_cardinality", 0) if isinstance(extra, dict) else 0
+        extra = field.json_schema_extra if isinstance(field.json_schema_extra, dict) else {}
+        minimum = extra.get("idta_min_cardinality", 0)
         if minimum and len(value) < minimum:
             raise ValueError(
                 f"{type(model).__name__}.{field_name} requires at least {minimum} entries"
             )
+        pattern = extra.get("idta_allowed_id_short")
+        if pattern and isinstance(value, dict):
+            for key in value:
+                if not re.fullmatch(pattern, key):
+                    raise ValueError(f"{type(model).__name__}.{field_name}: {key!r} is not an allowed idShort "
+                                     f"({pattern})")
         if isinstance(value, BaseModel):
             validate_idta_cardinality(value)
         elif isinstance(value, (dict, list, tuple)):
@@ -241,6 +245,9 @@ def validate_idta_cardinality(model: BaseModel) -> None:
 # discriminator and revalidation resolves the concrete type directly instead
 # of relying on fragile key inference.
 _ELEMENT_CLASS_REGISTRY: dict = {}
+# Every element class by its name: names repeat across templates (AID's and CCI's ``Type``), and a class marker
+# names a class only by its name.
+_ELEMENT_CLASSES_BY_NAME: dict = {}
 
 # semanticId value → list of concrete element classes carrying it.  Populated
 # alongside the class registry.  Resolution only uses a semanticId when it is
@@ -258,7 +265,7 @@ def _resolve_semantic_id_cls(sid: str):
     return None
 
 
-def _dump_container(container: Any, concept_sid: str = "") -> Any:
+def _dump_container(container: Any) -> Any:
     """Serialize a container losslessly — each child is dumped with its own
     concrete model and tagged with ``modelType`` (its class name).
 
@@ -267,8 +274,12 @@ def _dump_container(container: Any, concept_sid: str = "") -> Any:
     ``SubmodelElement`` schema and drops subclass fields, hence the explicit
     per-child dump here."""
     if isinstance(container, dict):
+        # The key is the element's id_short, also for an element put into the
+        # map after the container was validated.
         return {
-            k: _tag_dump(v, concept_sid) if isinstance(v, BaseModel) else v
+            k: ({**_tag_dump(v), "id_short": k}
+                if isinstance(k, str) and isinstance(v, SubmodelElement)
+                else _tag_dump(v) if isinstance(v, BaseModel) else v)
             for k, v in container.items()
         }
     if isinstance(container, (list, tuple)):
@@ -276,44 +287,18 @@ def _dump_container(container: Any, concept_sid: str = "") -> Any:
     return container
 
 
-def _field_concept_sid(container: BaseModel, field_name: str) -> str:
-    """semanticId of the element class of a ``Dict[str, E]`` field (the concept
-    semanticId of the multi-cardinality map), or ``""``."""
-    try:
-        ann = typing.get_type_hints(type(container), include_extras=True).get(field_name)
-    except Exception:
-        ann = None
-    args = typing.get_args(ann) if ann is not None else ()
-    if len(args) == 2 and args[0] is str:
-        inner = args[1]
-        if isinstance(inner, type) and issubclass(inner, SubmodelElement):
-            return _element_cls_semantic_id(inner)
-    return ""
-
-
-def _element_cls_semantic_id(cls) -> str:
-    """semanticId carried by an element class (``semantic_id`` is a pydantic
-    field, so read its default — the class attribute is a raising descriptor
-    in pydantic v2.11+)."""
-    try:
-        f = cls.model_fields.get("semantic_id")
-        if f is not None and isinstance(f.default, str):
-            return f.default
-    except Exception:
-        pass
-    return ""
-
-
-def _tag_dump(model: BaseModel, concept_sid: str = "") -> dict:
+def _tag_dump(model: BaseModel) -> dict:
     """Dump *model* with a ``modelType`` discriminator so revalidation can
-    resolve its concrete class.  A *concept_sid* (the containing Dict-map
-    field's concept semanticId) is stamped on the dump when the element has
-    none — so bare user entries (e.g. ``Property`` in ``Dict[str, Mode]``)
-    round-trip back into the right map field."""
-    d = {**model.model_dump(), "modelType": type(model).__name__}
-    if concept_sid and not d.get("semantic_id"):
-        d["semantic_id"] = concept_sid
-    return d
+    resolve its concrete class."""
+    return {**model.model_dump(), "modelType": type(model).__name__}
+
+
+def _declared_element_types(cls: type, field_name: str) -> tuple:
+    """The element classes a field declares (``Optional``/``Union`` members)."""
+    annotation = _resolve_annotation(_field_annotation(cls, field_name))
+    members = typing.get_args(annotation) if typing.get_origin(annotation) in (typing.Union, _UnionType) \
+        else (annotation,)
+    return tuple(m for m in members if isinstance(m, type))
 
 
 def _serialize_element_containers(model: BaseModel, handler) -> Any:
@@ -330,6 +315,18 @@ def _serialize_element_containers(model: BaseModel, handler) -> Any:
     data = handler(model)
     if not isinstance(data, dict):
         return data
+    # A named element field's element carries the field's name as its id_short,
+    # also when it was assigned after the container was validated. An element
+    # of a subclass of the field's declared class (an ``MqttForm`` in a field
+    # declared ``DmpForm``) is dumped as its own class with its ``modelType``,
+    # so it is restored as that class.
+    for fname in type(model).model_fields:
+        value = getattr(model, fname, None)
+        if fname not in _ELEMENT_META_KEYS and isinstance(value, SubmodelElement) \
+                and isinstance(data.get(fname), dict):
+            if type(value) not in _declared_element_types(type(model), fname):
+                data[fname] = _tag_dump(value)
+            data[fname]["id_short"] = _aas_field_name(type(model), fname)
     # NOTE: the SML ``value`` and Operation ``input_variable``/... fields have
     # their own per-field serializers; this generic pass additionally covers
     # every named ``Dict[str, E]`` / ``List[E]`` element-container field.
@@ -375,6 +372,7 @@ class SubmodelElement(HasSemantics, Referable):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         _ELEMENT_CLASS_REGISTRY[cls.__name__] = cls
+        _ELEMENT_CLASSES_BY_NAME.setdefault(cls.__name__, []).append(cls)
         # semanticId is read robustly: a value defined in this class's own
         # body wins (``__dict__`` — still a plain attribute at this point);
         # otherwise the inherited field default from ``model_fields`` is used.
@@ -550,10 +548,38 @@ class Capability(SubmodelElement):
 
 
 class Property(SubmodelElement):
+    """A Property; ``value`` is the lexical form of its ``value_type`` (a number or bool is written as one).
+
+    A template may restrict the value: ``FORM_CHOICES`` lists the values it may take, ``ALLOWED_RANGE`` the
+    (integer) bounds it lies within. An empty value is unset and always allowed."""
     id_short: AasIdString = "Property"
     value: str = ""
     value_type: str = "xs:string"
     value_id: str = ""
+    FORM_CHOICES: ClassVar[tuple] = ()
+    ALLOWED_RANGE: ClassVar[tuple] = ()
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def _lexical(cls, value: Any) -> Any:
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        return value
+
+    @model_validator(mode="after")
+    def _template_restrictions(self):
+        if self.value == "":
+            return self
+        if self.FORM_CHOICES and self.value not in self.FORM_CHOICES:
+            raise ValueError(f"{self.id_short} is {self.value!r}, not one of {', '.join(self.FORM_CHOICES)}")
+        if self.ALLOWED_RANGE:
+            low, high = (int(bound, 0) for bound in self.ALLOWED_RANGE)
+            if not low <= int(self.value, 0) <= high:
+                raise ValueError(f"{self.id_short} is {self.value}, outside [{self.ALLOWED_RANGE[0]}, "
+                                 f"{self.ALLOWED_RANGE[1]}]")
+        return self
 
 
 class MultiLanguageProperty(SubmodelElement):
@@ -803,15 +829,6 @@ _ELEMENT_TYPE_BY_MODELTYPE = {
 }
 
 
-class _PlaceholderId:
-    """Deterministic id_short generator for SMC items that carry none."""
-    _counter = itertools.count()
-
-    @classmethod
-    def next(cls) -> str:
-        return f"elem{next(cls._counter)}"
-
-
 def _resolve_annotation(annotation: Any) -> Any:
     """Strip Annotated/Optional wrappers; strings (forward refs) → None."""
     if isinstance(annotation, str):
@@ -830,30 +847,6 @@ def _container_item_type(annotation: Any) -> Any:
         if args:
             return args[1] if origin is dict and len(args) == 2 else args[0]
     return None
-
-
-def _infer_model_type(d: dict) -> str:
-    """Best-effort inference for dicts without ``modelType`` (pydantic dumps)."""
-    v = d.get("value")
-    if isinstance(v, list):
-        return "SubmodelElementList"
-    if isinstance(v, dict):
-        if v and all(isinstance(x, dict) for x in v.values()):
-            return "SubmodelElementCollection"
-        return "MultiLanguageProperty"
-    if "statements" in d:
-        return "Entity"
-    if "min" in d or "max" in d:
-        return "Range"
-    if "first" in d and "second" in d:
-        return "RelationshipElement"
-    if "content_type" in d:
-        return "File" if isinstance(v, str) else "Blob"
-    if "key" in d or "keys" in d:
-        return "ReferenceElement"
-    if "input_variable" in d or "output_variable" in d:
-        return "Operation"
-    return "Property"
 
 
 class _UnknownFieldError(ValueError):
@@ -932,11 +925,14 @@ def _build_element(cls: type, d: dict) -> Any:
         for container in ("submodel_element", "statements", "value"):
             kids = d.get(container)
             if isinstance(kids, list):
-                d[container] = {
-                    (c.get("id_short") or c.get("idShort") or _PlaceholderId.next()): c
-                    for c in kids
-                    if isinstance(c, dict)
-                }
+                d[container] = {}
+                for c in kids:
+                    if not isinstance(c, dict):
+                        continue
+                    name = c.get("id_short") or c.get("idShort")
+                    if not name:
+                        raise ValueError(f"a child of {cls.__name__}.{container} has no idShort: {c!r}")
+                    d[container][name] = c
     return cls(**d)
 
 
@@ -956,6 +952,14 @@ def _concrete_element_targets(target_type: Any) -> list:
         if isinstance(m, type) and issubclass(m, SubmodelElement)
         and m is not SubmodelElement
     ]
+
+
+def _class_named(name: str, bases) -> Optional[type]:
+    """The element class called ``name`` that is one of ``bases`` or a subclass of one (the last registered,
+    when several fit)."""
+    fitting = [cls for cls in _ELEMENT_CLASSES_BY_NAME.get(name, ())
+               if any(cls is base or issubclass(cls, base) for base in bases)]
+    return fitting[-1] if fitting else None
 
 
 def coerce_submodel_element(
@@ -1008,10 +1012,8 @@ def coerce_submodel_element(
         # CCI's ``Type`` — the registry is keyed by bare class name) is
         # ignored so the declared type is used.
         mt = d.get("modelType")
-        mt_cls = _ELEMENT_CLASS_REGISTRY.get(mt) if mt else None
-        if mt_cls is not None and any(
-            mt_cls is c or issubclass(mt_cls, c) for c in concrete
-        ):
+        mt_cls = _class_named(mt, concrete) if mt else None
+        if mt_cls is not None:
             concrete = [mt_cls]
         if len(concrete) == 1:
             # A single declared type is authoritative — surface build errors
@@ -1032,7 +1034,7 @@ def coerce_submodel_element(
 
     # generic container (Dict[str, SubmodelElement]) — a dump's ``modelType``
     # discriminator is authoritative; otherwise a UNIQUE semanticId (config
-    # dicts) resolves the concrete class; otherwise infer from keys.
+    # dicts) resolves the concrete class; otherwise the type is unknown.
     mt = d.get("modelType")
     if mt:
         cls = _ELEMENT_CLASS_REGISTRY.get(mt) or _ELEMENT_TYPE_BY_MODELTYPE.get(mt)
@@ -1047,16 +1049,18 @@ def coerce_submodel_element(
             except Exception as e:
                 if _is_unknown_field_error(e):
                     raise
-    mt = _infer_model_type(d)
-    cls = _ELEMENT_CLASS_REGISTRY.get(mt) or _ELEMENT_TYPE_BY_MODELTYPE.get(mt)
-    if cls is None:
-        return value
-    try:
-        return _build_element(cls, d)
-    except Exception as e:
-        if _is_unknown_field_error(e):
-            raise
-        return value
+    raise ValueError(f"cannot tell the element type of {d!r}: give its modelType")
+
+
+def _is_language_map(field_tp: Any, value: dict) -> bool:
+    """Whether ``value``, given for a MultiLanguageProperty field, is its lang→text value (``{"en": "…"}``)
+    rather than the element's own fields."""
+    elem_tp = _resolve_annotation(field_tp)
+    if typing.get_origin(elem_tp) in (typing.Union, _UnionType):
+        args = [a for a in typing.get_args(elem_tp) if a is not type(None)]
+        elem_tp = args[0] if len(args) == 1 else None
+    return (isinstance(elem_tp, type) and issubclass(elem_tp, MultiLanguageProperty) and bool(value)
+            and not set(value) & set(elem_tp.model_fields) and all(isinstance(t, str) for t in value.values()))
 
 
 def _coerce_container_data(cls: Any, data: Any) -> Any:
@@ -1093,23 +1097,15 @@ def _coerce_container_data(cls: Any, data: Any) -> Any:
         val = data[key]
         if origin is dict or (item_tp is not None and isinstance(val, dict)):
             # Explicit maps define their complete authored structure.
-            data[key] = {
-                k: coerce_submodel_element(
-                    v, id_short=k,
-                    target_type=(
-                        None  # dump children carry modelType → registry resolves
-                        if isinstance(v, dict) and "modelType" in v
-                        else item_tp
-                    ),
-                )
-                for k, v in val.items()
-            }
+            # The declared item type bounds the class a dump's ``modelType`` may name: names repeat
+            # across templates, so a name alone is ambiguous.
+            data[key] = {k: coerce_submodel_element(v, id_short=k, target_type=item_tp) for k, v in val.items()}
         elif origin in (list, tuple, set) and isinstance(val, list):
             item_tp = getattr(cls, "item_type", None) or item_tp
             data[key] = [
                 coerce_submodel_element(v, target_type=item_tp) for v in val
             ]
-        elif isinstance(val, dict):
+        elif isinstance(val, dict) and not _is_language_map(field_tp, val):
             # Named element field (e.g. ``Position.y``) given as a raw config
             # dict — coerce via the field's declared type and stamp the field
             # name as id_short (the single canonical name).  Already-typed
@@ -1123,6 +1119,21 @@ def _coerce_container_data(cls: Any, data: Any) -> Any:
                 data[key] = coerce_submodel_element(
                     val, id_short=_aas_field_name(cls, key), target_type=elem_tp
                 )
+        elif val is not None and not isinstance(val, SubmodelElement):
+            # The plain value of a named element field — a Property's text, a
+            # ReferenceElement's reference, a list's items, a Blob's content —
+            # becomes the field's element with that value; the field default's
+            # metadata (semanticId, description, …) is kept.
+            elem_tp = _resolve_annotation(field_tp)
+            if typing.get_origin(elem_tp) in (typing.Union, _UnionType):
+                args = [a for a in typing.get_args(elem_tp) if a is not type(None)]
+                elem_tp = args[0] if len(args) == 1 else None
+            if (isinstance(elem_tp, type) and issubclass(elem_tp, SubmodelElement)
+                    and "value" in elem_tp.model_fields):
+                default = field.default if isinstance(field.default, elem_tp) else None
+                metadata = ({name: getattr(default, name) for name in type(default).model_fields}
+                            if default is not None else {})
+                data[key] = (type(default) if default is not None else elem_tp)(**{**metadata, "value": val})
     return data
 
 

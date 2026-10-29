@@ -48,36 +48,18 @@ def test_all_pinned_templates_emit_parseable_modules(tmp_path):
         )
         tree = ast.parse(module.read_text())
         if module.name == "asset_interfaces_description.py":
-            forms = next(
-                node for node in tree.body
-                if isinstance(node, ast.ClassDef) and node.name == "forms"
-            )
-            fields = {
-                node.target.id: ast.unparse(node.annotation)
-                for node in forms.body
-                if isinstance(node, ast.AnnAssign)
-                and isinstance(node.target, ast.Name)
-            }
-            assert fields["href"] == "Href"
-            assert {
-                "htv_methodName",
-                "modv_function",
-                "mqv_retain",
-                "uav_browsePath",
-                "iolv_method",
-                "canv_offset",
-            } <= fields.keys()
-            assert all(
-                fields[field].startswith("Optional[")
-                for field in (
-                    "htv_methodName",
-                    "modv_function",
-                    "mqv_retain",
-                    "uav_browsePath",
-                    "iolv_method",
-                    "canv_offset",
-                )
-            )
+            # Each protocol's form is the shared form plus its own binding terms.
+            classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
+
+            def fields(name):
+                return {node.target.id: ast.unparse(node.annotation) for node in classes[name].body
+                        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)}
+            assert not [f for f in fields("forms") if f.startswith(("htv_", "modv_", "mqv_", "uav_", "iolv_", "canv_"))]
+            for protocol, term in (("HTTP", "htv_methodName"), ("MODBUS", "modv_function"), ("MQTT", "mqv_retain"),
+                                   ("OPCUA", "uav_browsePath"), ("IOLINK_OVER_PROFINET_REST", "iolv_method"),
+                                   ("CAN", "canv_offset")):
+                assert [ast.unparse(b) for b in classes[f"forms_{protocol}"].bases] == ["forms"]
+                assert term in fields(f"forms_{protocol}")
         result = subprocess.run(
             [
                 sys.executable,
@@ -85,12 +67,9 @@ def test_all_pinned_templates_emit_parseable_modules(tmp_path):
                 "import importlib.util, sys; "
                 "spec = importlib.util.spec_from_file_location('generated_template', sys.argv[1]); "
                 "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
-                "expected = {'htv_methodName', 'modv_function', 'mqv_retain', "
-                "'uav_browsePath', 'iolv_method', 'canv_offset'} "
-                "if sys.argv[2] == 'aid' else set(); "
-                "assert expected <= module.forms.model_fields.keys() if expected else True; "
-                "assert module.forms.model_fields['href'].is_required() if expected else True; "
-                "assert all(not module.forms.model_fields[field].is_required() for field in expected)",
+                "aid = sys.argv[2] == 'aid'; "
+                "assert module.forms_MQTT.model_fields['href'].is_required() if aid else True; "
+                "assert not module.forms_MQTT.model_fields['mqv_retain'].is_required() if aid else True",
                 str(module),
                 "aid" if module.name == "asset_interfaces_description.py" else "other",
             ],
@@ -283,7 +262,7 @@ def test_generation_preserves_named_fields_and_source_provenance(tmp_path):
     assert generated.split("Source: ", 1)[1].splitlines()[0].endswith("template.json")
     assert "class InterfaceTemplateForMQTT(SubmodelElementCollection):" in generated
     assert "ManufacturerName: Optional[Property] = None" in generated
-    assert 'in_: Optional[Property] = Field(default=None, json_schema_extra={"aas_id_short": "in"})' in generated
+    assert 'in_: Optional[Property] = _Field(default=None, json_schema_extra={"aas_id_short": "in"})' in generated
     assert "InterfaceTemplateForMQTT_t: TypeAlias = InterfaceTemplateForMQTT" in generated
     assert "InterfaceTemplateForMQTT: InterfaceTemplateForMQTT_t" in generated
 
@@ -396,18 +375,18 @@ def test_distinct_leaf_metadata_does_not_share_a_class(tmp_path):
     ])
     first = module.First.model_fields["Attachment"].annotation
     second = module.Second.model_fields["Attachment"].annotation
-    assert first in get_args(second)
     assert first.model_fields["content_type"].default == "application/pdf"
-    assert any(cls.model_fields["content_type"].default == "image/png" for cls in get_args(second))
+    variants = get_args(second) or (second,)
+    assert first in variants
+    assert any(cls.model_fields["content_type"].default == "image/png" for cls in variants)
 
 
 def test_class_name_conflicts_with_generic_leaf_keep_semantics(tmp_path):
-    module = _generate_fixture(tmp_path, [_element(
-        "File", "File", sid="urn:attachment", contentType="text/csv"
-    )])
-    leaf = get_args(module.ReviewModel.model_fields["File"].annotation)[0]
+    module = _generate_fixture(tmp_path, [_element("File", "File", sid="urn:attachment")])
+    # The template's element, not the generic File: it carries the template's semanticId.
+    leaf = module.ReviewModel.model_fields["File"].annotation
+    assert leaf is not module.File and issubclass(leaf, module.File)
     assert leaf.model_fields["semantic_id"].default == "urn:attachment"
-    assert leaf.model_fields["content_type"].default == "text/csv"
 
 
 def test_repeated_disambiguated_leaf_uses_one_definition(tmp_path):
@@ -426,14 +405,14 @@ def test_repeated_disambiguated_leaf_uses_one_definition(tmp_path):
     assert module.Second.model_fields["Label"].annotation is module.Wrapper.model_fields["Second"].annotation.model_fields["Label"].annotation
 
 
-def test_relationship_defaults_are_references_not_tuples(tmp_path):
+def test_relationship_example_endpoints_are_not_defaults(tmp_path):
     reference = {"type": "ExternalReference", "keys": [
         {"type": "GlobalReference", "value": "urn:target"}
     ]}
     module = _generate_fixture(tmp_path, [_element(
-        "Connects", "RelationshipElement", first=reference, second=reference
+        "Connects", "RelationshipElement", sid="urn:connects", first=reference, second=reference
     )])
-    assert module.Connects().first.key[0].value == "urn:target"
+    assert module.Connects().first is None and module.Connects().second is None
 
 
 def test_invalid_class_and_field_names_fail_with_context(tmp_path):
@@ -454,3 +433,74 @@ def test_same_name_semantic_id_with_different_element_kinds_fails(tmp_path):
             _element("Item", sid="urn:item"),
             _element("Item", "SubmodelElementCollection", sid="urn:item", value=[]),
         ])
+
+
+# ── Template rules ───────────────────────────────────────────────────────────
+
+def _cardinality(value):
+    return {"qualifiers": [{"type": "SMT/Cardinality", "value": value}]}
+
+
+@pytest.mark.parametrize("qualifiers", [
+    [{"type": "SMT/Cardinality", "value": "OneToOne"}],
+    [{"type": "Multiplicity", "value": "One"}],
+])
+def test_an_unknown_cardinality_fails_the_run(tmp_path, qualifiers):
+    with pytest.raises(ValueError, match="Multiplicity|unknown SMT/Cardinality"):
+        _generate_fixture(tmp_path, [_element("Count", qualifiers=qualifiers)])
+
+
+def test_a_placeholder_id_short_names_a_repeatable_entry(tmp_path):
+    module = _generate_fixture(tmp_path, [
+        _element("Doc{00}", "SubmodelElementCollection", value=[_element("Title")], **_cardinality("ZeroToMany")),
+    ])
+    assert "Doc" in module.ReviewModel.model_fields
+    assert module.Doc.model_fields.get("id_short").default != "Doc{00}"
+
+
+def test_form_choices_and_allowed_ranges_restrict_a_value(tmp_path):
+    module = _generate_fixture(tmp_path, [
+        _element("Mode", qualifiers=[{"type": "FormChoices", "value": "Auto;Manual"}]),
+        _element("Address", qualifiers=[{"type": "SMT/AllowedRange", "value": "[0x00, 0x1f]"}]),
+    ])
+    assert module.Mode(value="Auto").value == "Auto"
+    assert module.Address(value="0x1f").value == "0x1f"
+    with pytest.raises(ValueError, match="not one of Auto, Manual"):
+        module.Mode(value="Off")
+    with pytest.raises(ValueError, match="outside"):
+        module.Address(value="0x20")
+
+
+def test_an_allowed_id_short_constrains_a_map_key(tmp_path):
+    from aas_pydantic import validate_idta_cardinality
+    module = _generate_fixture(tmp_path, [_element("Time", qualifiers=[
+        {"type": "SMT/Cardinality", "value": "ZeroToMany"}, {"type": "AllowedIdShort", "value": "Time[\\d{2,3}]"}])])
+    validate_idta_cardinality(module.ReviewModel(id_short="ReviewModel", Time={"Time": {}, "Time01": {}}))
+    with pytest.raises(ValueError, match="not an allowed idShort"):
+        validate_idta_cardinality(module.ReviewModel(id_short="ReviewModel", Time={"RelativeTime": {}}))
+
+
+def test_a_template_collection_without_children_is_open(tmp_path):
+    from aas_pydantic import DynamicSubmodelElementCollection, Property
+    module = _generate_fixture(tmp_path, [_element("Values", "SubmodelElementCollection", value=[])])
+    assert issubclass(module.Values, DynamicSubmodelElementCollection)
+    assert module.Values(value={"Speed": Property(value="3")}).value["Speed"].value == "3"
+
+
+def test_the_version_comes_from_the_semantic_id_when_the_template_has_no_administration(tmp_path):
+    source = tmp_path / "fixture.json"
+    source.write_text(json.dumps({"submodels": [{
+        "modelType": "Submodel", "idShort": "ReviewModel",
+        "semanticId": {"keys": [{"value": "https://example.test/ReviewModel/2/3/Submodel"}]},
+        "submodelElements": [],
+    }]}))
+    generator.gen_template(str(source), str(tmp_path))
+    text = (tmp_path / "review_model.py").read_text()
+    assert 'VERSION: ClassVar[str] = "2"' in text and 'REVISION: ClassVar[str] = "3"' in text
+
+
+def test_the_aid_requires_one_interface_of_any_protocol():
+    from aas_pydantic import validate_idta_cardinality
+    from aas_pydantic.submodel_templates.asset_interfaces_description import AssetInterfacesDescription
+    with pytest.raises(ValueError, match="requires one of InterfaceTemplateForHTTP"):
+        validate_idta_cardinality(AssetInterfacesDescription())

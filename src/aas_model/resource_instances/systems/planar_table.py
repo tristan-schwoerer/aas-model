@@ -2,26 +2,24 @@
 
 from aas_model.constants import BASE_URL, BROKER, CSSX, SITE
 from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic import ExternalReference
-from aas_pydantic.submodel_templates.hierarchical_structures import (
-    ArcheType, EntryNode, HasPart, HierarchicalStructures, Node,
+from aas_pydantic.submodel_templates.hierarchical_structures import EntryNode, Node
+from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template.operational import COMMAND_SCHEMA, COMMAND_SCHEMA_URL, MqttInterfaces
+from aas_model.resource_template.resources import CompositeResource
+from aas_model.resource_template.references import (
+    MQTT_INTERFACE, action_member_ref, affordance_ref, operation_variable_ref, skill_ref,
 )
-from aas_pydantic.submodel_templates.nameplate import (
-    Nameplate, URIOfTheProduct, ManufacturerName, ManufacturerProductDesignation,
-    ManufacturerProductType, OrderCodeOfManufacturer, SerialNumber,
-    YearOfConstruction, CountryOfOrigin,
+from aas_model.submodel_templates.control_component_instance import (
+    ExtendedSkill, SkillOperation, SkillInterfaceRelationship,
 )
-from aas_model.resource_template.operational import action_member_ref, MqttInterfaces
-from aas_model.resource_template.systems import CompositeResource
-from aas_model.resource_template.asset_interfaces_description import MQTT_INTERFACE, affordance_ref, mqtt_action
-from aas_model.submodel_templates.control_component_instance import ExtendedSkill, SkillOperation, SkillInterfaceRelationship
 from aas_model.submodel_templates.aimc import DmpMappingConfiguration
-from aas_model.submodel_templates import Transformation
-from aas_pydantic import Key, ModelReference, Property, Qualifier
-from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import Source as SourceReference, Sink as SinkReference, SourcesItem, SinksItem, Sources, Sinks, SourceId, SinkId, DefaultPollingInterval
-from aas_model.resource_template.asset_interfaces_mapping_configuration import operation_sources
-from aas_model.constants import INVOCATION_URL_TEMPLATE
-from aas_model.invocation_authoring import finalize_invocation_addresses
+from aas_pydantic import Property
+from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import (
+    Sink as SinkReference, SourcesItem, SinksItem,
+)
+from aas_model.submodel_templates.aid import DmpActionInput, MqttAction, MqttActionForm
+from aas_model.json_schema_aid import datapoint_from_schema
+from aas_model.submodel_templates.hierarchical_structures import ResourceHierarchicalStructures
 
 
 def planar_table() -> CompositeResource:
@@ -32,28 +30,26 @@ def planar_table() -> CompositeResource:
         "planarTableShuttle1AAS", "planarTableShuttle2AAS", "planarTableShuttle3AAS",
     )
     table = CompositeResource(
-        id_short=identity, id=resource_id, asset_type=f"{CSSX}#PlanarTable",
+        id_short=identity,
+        id=resource_id,
+        asset_type=f"{CSSX}#PlanarTable",
         specific_asset_ids={"serialNumber": serial},
         nameplate=Nameplate(
-            id_short="Nameplate", URIOfTheProduct=URIOfTheProduct(value=resource_id),
+            URIOfTheProduct=resource_id,
             ManufacturerName=ManufacturerName(value={"en": "Planar Motors"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "Planar Motors Table"}),
-            ManufacturerProductType=ManufacturerProductType(value="Planar Motors Table"),
+            ManufacturerProductType="Planar Motors Table",
             AddressInformation=SITE_ADDRESS.model_copy(deep=True),
-            OrderCodeOfManufacturer=OrderCodeOfManufacturer(value=serial),
-            SerialNumber=SerialNumber(value=serial), YearOfConstruction=YearOfConstruction(value="2024"),
-            CountryOfOrigin=CountryOfOrigin(value="DK"),
+            OrderCodeOfManufacturer=serial,
+            SerialNumber=serial,
+            YearOfConstruction="2024",
+            CountryOfOrigin="DK",
         ),
-        hierarchical_structures=HierarchicalStructures(
-            id_short="HierarchicalStructures", ArcheType=ArcheType(value="OneDown"),
+        hierarchical_structures=ResourceHierarchicalStructures(
+            ArcheType="OneDown",
             EntryNode=EntryNode(
-                id_short="EntryNode", global_asset_id=resource_id,
-                Node={child: Node(id_short=child, global_asset_id=f"{BASE_URL}/aas/{child}") for child in children},
-                HasPart={f"HasPart_{child}": HasPart(
-                    id_short=f"HasPart_{child}",
-                    first=ExternalReference(key=(Key(type_="GlobalReference", value=resource_id),)),
-                    second=ExternalReference(key=(Key(type_="GlobalReference", value=f"{BASE_URL}/aas/{child}"),)),
-                ) for child in children},
+                global_asset_id=resource_id,
+                Node={child: Node(global_asset_id=f"{BASE_URL}/aas/{child}") for child in children},
             ),
         ),
         asset_interfaces_description=MqttInterfaces(id_short="AssetInterfacesDescription"),
@@ -66,15 +62,28 @@ def planar_table() -> CompositeResource:
     name = "Halt"
     table.asset_interfaces_description.InterfaceTemplateForMQTT[
         "interface_mqtt"
-    ].InteractionMetadata.actions.property_name[name] = mqtt_action(name, synchronous=True, has_response=False)
-    skill = ExtendedSkill(id_short=name)
-    skill.Disabled.value = "false"
-    skill.interface_reference.value = ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/AssetInterfacesDescription"), Key(type_="SubmodelElementCollection", value="interface_mqtt"), Key(type_="SubmodelElementCollection", value="InteractionMetadata"), Key(type_="SubmodelElementCollection", value="actions"), Key(type_="SubmodelElementCollection", value=name)))
-    skill.operation = SkillOperation(id_short="operation", qualifiers=[Qualifier(type_="invocationDelegation", value=INVOCATION_URL_TEMPLATE, value_type="xs:string", kind="ConceptQualifier"), Qualifier(type_="Synchronous", value="true", value_type="xs:string", kind="ConceptQualifier")], input_variable=[Property(id_short="Uuid", description="The UUID of the command")])
-    table.control_component_instance.Skills.Skill[name] = skill
-    table.control_component_instance.Endpoints.Endpoint[name] = SkillInterfaceRelationship(id_short=name, first=ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/ControlComponentInstance"), Key(type_="SubmodelElementCollection", value="Skills"), Key(type_="SubmodelElementCollection", value=name))), second=ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/AssetInterfacesDescription"), Key(type_="SubmodelElementCollection", value="interface_mqtt"), Key(type_="SubmodelElementCollection", value="InteractionMetadata"), Key(type_="SubmodelElementCollection", value="actions"), Key(type_="SubmodelElementCollection", value=name))))
-    table.asset_interfaces_mapping_configuration.MappingConfigurations.value.append(
-        DmpMappingConfiguration(id_short=name, DefaultPollingInterval=DefaultPollingInterval(value="0.0"), Transformation=Transformation(value=f"function aimc_main(sources) return {{ {name} = {{ Uuid = sources.Uuid }} }} end"), Sources=Sources(value=operation_sources(name, ["Uuid"])), Sinks=Sinks(value=[SinksItem(id_short=name, Sink=SinkReference(value=action_member_ref(MQTT_INTERFACE, name, "input")), SinkId=SinkId(value=name))])),
+    ].InteractionMetadata.actions.property_name[name] = MqttAction(
+        title=name,
+        synchronous="true",
+        input=datapoint_from_schema(COMMAND_SCHEMA, cls=DmpActionInput, schema_url=COMMAND_SCHEMA_URL),
+        forms=MqttActionForm(href=f"CMD/{name}", mqv_qos="2"),
     )
-    finalize_invocation_addresses(table)
+    skill = ExtendedSkill(
+        Disabled="false", interface_reference=affordance_ref(MQTT_INTERFACE, "actions", name)
+    )
+    skill.operation = SkillOperation(input_variable=[Property(id_short="Uuid", description="The UUID of the command")])
+    table.control_component_instance.Skills.Skill[name] = skill
+    table.control_component_instance.Endpoints.Endpoint[name] = SkillInterfaceRelationship(
+        first=skill_ref(name),
+        second=affordance_ref(MQTT_INTERFACE, "actions", name),
+    )
+    table.asset_interfaces_mapping_configuration.MappingConfigurations.value.append(
+        DmpMappingConfiguration(
+            id_short=name,
+            DefaultPollingInterval="0.0",
+            Transformation=f"function aimc_main(sources) return {{ {name} = {{ Uuid = sources.Uuid }} }} end",
+            Sources=[SourcesItem(SourceId="Uuid", Source=operation_variable_ref(name, "Uuid"))],
+            Sinks=[SinksItem(Sink=SinkReference(value=action_member_ref(MQTT_INTERFACE, name, "input")), SinkId=name)],
+        ),
+    )
     return table

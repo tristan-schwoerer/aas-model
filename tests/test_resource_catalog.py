@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from aas_model.resource_template.control_component_instance import skill_ref
+from aas_model.resource_template.references import skill_ref
 from pydantic import BaseModel
 from pydantic import ValidationError
 
@@ -16,12 +16,11 @@ from aas_pydantic.submodel_templates.hierarchical_structures import (
     ArcheType, EntryNode, HierarchicalStructures,
 )
 from aas_model.resource_template import (
-    Station, MqttOperationalStation, OpcuaOperationalStation, ProcessingStation, HandlingStation,
-    TransportResource, Shuttle, SoftwareResource, CompositeResource, PhysicalResource, OperationalResource,
+    CompositeResource, HandlingStation, MqttOperationalStation, OpcuaOperationalStation, OperationalResource,
+    PhysicalResource, ProcessingStation, Shuttle, SoftwareResource, Station, TransportResource,
 )
 from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
-from aas_model.resource_template.transport import PlanarShuttle
-from aas_model.resource_template.software import MqttSoftwareResource
+from aas_model.resource_template.resources import MqttSoftwareResource, PlanarShuttle
 from aas_pydantic import ExternalReference, Key, ModelReference
 from aas_pydantic.submodel_templates.capability_description import CapabilityRealizedBy
 from aas_pydantic.convert_pydantic_model import _make_basyx_reference
@@ -93,7 +92,9 @@ def test_resource_types_have_coherent_defaults_and_preserve_empty_imports(resour
     )} if resource_type is CompositeResource else {}
     resource = resource_type(id_short="Example", **kwargs)
     assert isinstance(resource, Resource)
-    for name, skill in resource.control_component_instance.Skills.Skill.items():
+    resolved = resource.model_copy(deep=True)
+    inject_ids(resolved)
+    for name, skill in resolved.control_component_instance.Skills.Skill.items():
         _, interface, _, kind, action = (key.value for key in skill.interface_reference.value.key)
         assert (kind, action) == ("actions", name)
         assert name in _interfaces(resource)[interface].InteractionMetadata.actions.property_name
@@ -279,7 +280,7 @@ def test_physical_and_operational_inheritance_is_declared_at_the_right_level():
 
 
 def test_dispensing_type_declares_capability_but_not_vendor_skill_or_weight():
-    from aas_model.resource_template.stations import DispensingStation
+    from aas_model.resource_template.resources import DispensingStation
 
     station = DispensingStation(id_short="GenericDispensing")
     assert set(station.capability_description.CapabilitySet["Processing"].CapabilityContainer) == {"Dispensing"}
@@ -326,7 +327,7 @@ def test_dispensing_observes_the_weight_at_a_fast_sampling_interval():
 
 
 def test_direct_typed_defaults_are_independent_across_resources():
-    from aas_model.resource_template.stations import MqttOperationalStation, StopperingStation
+    from aas_model.resource_template.resources import MqttOperationalStation, StopperingStation
 
     assert MqttOperationalStation.model_fields["variables"].default_factory is None
     assert MqttOperationalStation.model_fields["control_component_instance"].default_factory is None
@@ -368,11 +369,13 @@ def test_orchestrator_http_interface_is_not_inherited_by_other_software():
 
 
 @pytest.mark.parametrize("name", sorted(CATALOG_NAMES))
-def test_factory_authored_skills_have_finalized_invocations_and_empty_imports_stay_empty(name):
+def test_factory_authored_skills_resolve_their_invocations_and_empty_imports_stay_empty(name):
     resource = RESOURCE_FACTORIES[name]()
-    for skill_name, skill in resource.control_component_instance.Skills.Skill.items():
+    resolved = resource.model_copy(deep=True)
+    inject_ids(resolved)
+    for skill_name, skill in resolved.control_component_instance.Skills.Skill.items():
         invocation = next(q for q in skill.operation.qualifiers if q.type_ == "invocationDelegation")
-        submodel = resource.control_component_instance
+        submodel = resolved.control_component_instance
         assert invocation.value == "http://dmp:8080" + operation_path(
             f"{BASE_URL}/aas/{resource.id_short}/submodels/{submodel.id_short}", f"Skills.{skill_name}.operation")
     resource.control_component_instance.Skills.Skill.clear()

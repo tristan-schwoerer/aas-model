@@ -12,33 +12,18 @@ from __future__ import annotations
 from aas_pydantic import Key, ModelReference, Property
 
 from aas_pydantic.submodel_templates.asset_interfaces_description import (
-    Title, EndpointMetadata, security_t, securityDefinitions,
-    Base, ContentType, Href, HtvMethodName, MqvControlPacket, MqvQos, MqvRetain,
-    Subprotocol, Observable as AIDObservable, UavBrowsePath,
+    Title, EndpointMetadata, security_t, securityDefinitions, Base, ContentType, Href, HtvMethodName,
+    MqvControlPacket, MqvQos, MqvRetain, Subprotocol, Observable as AIDObservable, UavBrowsePath,
 )
 
 from aas_model.submodel_templates.aid import (
-    DmpAssetInterfacesDescription, DmpAction, DmpActionForm, DmpActions,
-    DmpEvent, DmpEventData, DmpEvents, DmpForm, DmpInteractionMetadata,
-    DmpProperties, DmpProperty, DmpHttpInterface, DmpModbusInterface,
-    DmpSnmpInterface, SnmpForm, SnmpInteractionMetadata, SnmpProperties, SnmpProperty,
-    SnmpvPduType, SnmpvVersion,
-    DmpBacnetInterface, DmpOpcuaInterface, MqttAction, MqttActionForm,
-    MqttActions, MqttInteractionMetadata, MqttInterface, MqvResponseTopic,
-    OpcuaAction, OpcuaActions, OpcuaEvent, OpcuaEventData, OpcuaEventField,
-    OpcuaEventFields, OpcuaEvents, OpcuaInteractionMetadata, Synchronous,
-    UavComponentOf, UavEventField, UavEventType, Op,
-)
-from aas_model.submodel_templates import (
-    Aimc, AimcMappingConfiguration, AimcMappingConfigurations, Transformation,
-    DmpResponseSink, DmpResponseSinks, DmpResponseSource, DmpResponseSources,
-    DmpResponseTransformation, DmpEvaluation, DmpEvaluationMode, DmpSource,
-)
-from aas_model.submodel_templates.aimc import DmpInvocationTimeout
-from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import (
-    SourcesItem as Source, Sources, SinksItem as Sink, Sinks, SourceId, SinkId,
-    Source as SourceReference, Sink as SinkReference,
-    DefaultPollingInterval,
+    DmpAssetInterfacesDescription, DmpAction, DmpActionForm, DmpActions, DmpEvent, DmpEventData, DmpEvents,
+    DmpForm, DmpInteractionMetadata, DmpProperties, DmpProperty, DmpHttpInterface, DmpModbusInterface,
+    DmpSnmpInterface, SnmpForm, SnmpInteractionMetadata, SnmpProperties, SnmpProperty, SnmpvPduType, SnmpvVersion,
+    DmpBacnetInterface, DmpOpcuaInterface, MqttAction, MqttActionForm, MqttForm, OpcuaForm, OpcuaActionForm,
+    HttpForm, HttpActionForm, ModbusForm, ModbusActionForm, BacnetForm, BacnetActionForm, MqttActions, MqttInteractionMetadata,
+    MqttInterface, MqvResponseTopic, OpcuaAction, OpcuaActions, OpcuaEvent, OpcuaEventData, OpcuaEvents,
+    OpcuaInteractionMetadata, Synchronous, UavComponentOf, UavEventType, Op,
 )
 
 
@@ -57,7 +42,7 @@ def _endpoint(base: str, content_type: str = "application/json") -> EndpointMeta
 def mqtt_property(name: str, href: str, *, qos: int = 0, retain: bool = True,
                   control_packet: str | None = None, op: str | None = None) -> DmpProperty:
     """An observable MQTT property on ``href``."""
-    form = DmpForm(href=Href(value=href), mqv_qos=MqvQos(value=str(qos)))
+    form = MqttForm(href=Href(value=href), mqv_qos=MqvQos(value=str(qos)))
     if retain:
         form.mqv_retain = MqvRetain(value="true")
     if control_packet is not None:
@@ -87,7 +72,7 @@ def mqtt_event(name: str, href: str, data_schema: dict | None = None, *,
         title=Title(value=name),
         data=(datapoint_from_schema(data_schema, key="data", cls=DmpEventData)
               if data_schema is not None else None),
-        forms=DmpForm(href=Href(value=href), mqv_qos=MqvQos(value=str(qos))),
+        forms=MqttForm(href=Href(value=href), mqv_qos=MqvQos(value=str(qos))),
     )
 
 
@@ -119,7 +104,7 @@ def _gen_interface(template_cls, base: str, *, properties=None, actions=None,
                    observable: bool = False, subprotocol: str | None = None,
                    op: str | None = None, meta_cls=DmpInteractionMetadata,
                    properties_cls=DmpProperties, property_cls=DmpProperty, form_cls=DmpForm,
-                   actions_cls=DmpActions, action_cls=DmpAction,
+                   action_form_cls=DmpActionForm, actions_cls=DmpActions, action_cls=DmpAction,
                    form_extras=None, action_extras=None):
     """Compose an interface. ``actions`` values are ``(href, method, …)``
     tuples or an href (POST); ``form_extras(n, spec)``/``action_extras(n,
@@ -142,10 +127,10 @@ def _gen_interface(template_cls, base: str, *, properties=None, actions=None,
         acts = {}
         for n, spec in actions.items():
             href, method = (spec[0], spec[1]) if isinstance(spec, tuple) else (spec, "POST")
+            form = action_form_cls(href=Href(value=href), contentType=ContentType(value="application/json"))
             # htv_methodName is an HTTP term: other protocols' forms carry none.
-            http = template_cls is DmpHttpInterface
-            form = DmpActionForm(href=Href(value=href), contentType=ContentType(value="application/json"),
-                                 htv_methodName=HtvMethodName(value=method) if method and http else None)
+            if method and template_cls is DmpHttpInterface:
+                form.htv_methodName = HtvMethodName(value=method)
             for fname, val in ((form_extras(n, spec) or {}) if form_extras else {}).items():
                 setattr(form, fname, val)
             acts[n] = action_cls(title=Title(value=n), forms=form,
@@ -178,23 +163,14 @@ def opcua_event(name: str, notifier: str, fields: dict, *,
     (e.g. ``0:ToState/0:Id``); ``event_type`` is the EventType NodeId the
     subscription is filtered to."""
     from aas_model.json_schema_aid import datapoint_from_schema
-    schemas = {n: (v[0] if isinstance(v, tuple) else v) for n, v in fields.items()}
-    data = datapoint_from_schema({"type": "object", "properties": schemas},
-                                 key="data", cls=OpcuaEventData)
-    members = {}
-    for n, generic in data.properties.property_name.items():
-        spec = fields[generic.key.value if generic.key is not None else n]
-        member = OpcuaEventField(**{f: getattr(generic, f) for f in type(generic).model_fields})
-        if isinstance(spec, tuple):
-            member.uav_eventField = UavEventField(value=spec[1])
-        members[n] = member
-    data.properties = OpcuaEventFields(property_name=members)
+    schemas = {n: ({**v[0], "uav_eventField": v[1]} if isinstance(v, tuple) else v) for n, v in fields.items()}
+    data = datapoint_from_schema({"type": "object", "properties": schemas}, key="data", cls=OpcuaEventData)
     return OpcuaEvent(
         title=Title(value=name),
         uav_eventType=UavEventType(value=event_type) if event_type else None,
         data=data,
-        forms=DmpForm(href=Href(value=f"/?id={notifier}"),
-                      contentType=ContentType(value="application/octet-stream")),
+        forms=OpcuaForm(href=Href(value=f"/?id={notifier}"),
+                        contentType=ContentType(value="application/octet-stream")),
     )
 
 
@@ -210,7 +186,7 @@ def opcua_interface(base: str, *, properties=None, actions=None, events=None,
         DmpOpcuaInterface, base, properties=properties, actions=actions,
         observable=observable, subprotocol=subprotocol, op=op,
         meta_cls=OpcuaInteractionMetadata, actions_cls=OpcuaActions,
-        action_cls=OpcuaAction,
+        action_cls=OpcuaAction, form_cls=OpcuaForm, action_form_cls=OpcuaActionForm,
         form_extras=_opcua_form_extras, action_extras=_opcua_action_extras)
     if events:
         # Assigned after validation, so the container is named here.
@@ -221,15 +197,18 @@ def opcua_interface(base: str, *, properties=None, actions=None, events=None,
 
 
 def http_interface(base: str, *, properties=None, actions=None) -> DmpHttpInterface:
-    return _gen_interface(DmpHttpInterface, base, properties=properties, actions=actions)
+    return _gen_interface(DmpHttpInterface, base, properties=properties, actions=actions,
+                          form_cls=HttpForm, action_form_cls=HttpActionForm)
 
 
 def modbus_interface(base: str, *, properties=None, actions=None) -> DmpModbusInterface:
-    return _gen_interface(DmpModbusInterface, base, properties=properties, actions=actions)
+    return _gen_interface(DmpModbusInterface, base, properties=properties, actions=actions,
+                          form_cls=ModbusForm, action_form_cls=ModbusActionForm)
 
 
 def bacnet_interface(base: str, *, properties=None, actions=None) -> DmpBacnetInterface:
-    return _gen_interface(DmpBacnetInterface, base, properties=properties, actions=actions)
+    return _gen_interface(DmpBacnetInterface, base, properties=properties, actions=actions,
+                          form_cls=BacnetForm, action_form_cls=BacnetActionForm)
 
 
 def snmp_interface(base: str, *, properties=None, observable: bool = False) -> DmpSnmpInterface:
@@ -286,61 +265,3 @@ def aimc_ref(*values: str) -> ModelReference:
             for i, v in enumerate(values)
         )
     )
-
-
-def aimc_source(source_id: str, ref: ModelReference,
-                polling_interval: float | None = None, evaluation: str | None = None) -> Source:
-    fields = dict(
-        Source=SourceReference(value=ref),
-        SourceId=SourceId(value=source_id),
-        PollingInterval=DefaultPollingInterval(value=str(polling_interval)) if polling_interval is not None else None,
-    )
-    if evaluation is None:
-        return Source(**fields)
-    return DmpSource(**fields, Evaluation=DmpEvaluation(Mode=DmpEvaluationMode(value=evaluation)))
-
-
-def aimc_sink(sink_id: str, ref: ModelReference) -> Sink:
-    return Sink(Sink=SinkReference(value=ref), SinkId=SinkId(value=sink_id))
-
-
-def aimc_mapping(*, sources: list[Source], sinks: list[Sink],
-                 transformation: str | None = None,
-                 transformation_semantic_id: str | None = None,
-                 response_transformation: str | None = None,
-                 response_sources: list[DmpResponseSource] | None = None,
-                 response_sinks: list[DmpResponseSink] | None = None,
-                 qualifiers: list | None = None,
-                 default_polling_interval: float | None = None,
-                 invocation_timeout: str | None = None,
-                 id_short: str = "mapping") -> AimcMappingConfiguration:
-    kwargs = dict(
-        id_short=id_short,
-        Sources=Sources(value=sources),
-        Sinks=Sinks(value=sinks),
-    )
-    if default_polling_interval is not None:
-        kwargs["DefaultPollingInterval"] = DefaultPollingInterval(
-            value=str(default_polling_interval))
-    if transformation is not None:
-        tblob = {"value": transformation.encode("utf-8")}
-        if transformation_semantic_id:
-            tblob["semantic_id"] = transformation_semantic_id
-        kwargs["Transformation"] = Transformation(**tblob)
-    if response_transformation is not None:
-        kwargs["ResponseTransformation"] = DmpResponseTransformation(
-            value=response_transformation.encode("utf-8"))
-    if response_sources is not None:
-        kwargs["ResponseSources"] = DmpResponseSources(value=response_sources)
-    if response_sinks is not None:
-        kwargs["ResponseSinks"] = DmpResponseSinks(value=response_sinks)
-    if invocation_timeout is not None:
-        kwargs["InvocationTimeout"] = DmpInvocationTimeout(value=invocation_timeout)
-    if qualifiers is not None:
-        kwargs["qualifiers"] = qualifiers
-    return AimcMappingConfiguration(**kwargs)
-
-
-def build_aimc(*mappings: AimcMappingConfiguration, id_short: str = "AIMC") -> Aimc:
-    return Aimc(id_short=id_short,
-                MappingConfigurations=AimcMappingConfigurations(value=list(mappings)))

@@ -2,33 +2,27 @@
 Stoppering skill, all over MQTT."""
 
 from aas_pydantic import Property
-from aas_model.constants import BASE_URL, BROKER, INVOCATION_URL_TEMPLATE, SITE
+from aas_model.constants import BASE_URL, BROKER, SITE
 from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic.submodel_templates.nameplate import (
-    Nameplate, URIOfTheProduct, ManufacturerName, ManufacturerProductDesignation,
-    ManufacturerProductType, OrderCodeOfManufacturer, SerialNumber,
-    YearOfConstruction, CountryOfOrigin,
-)
-from aas_pydantic.submodel_templates.hierarchical_structures import (
-    ArcheType, EntryNode, HierarchicalStructures, IsPartOf, Node,
-)
+from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_pydantic.submodel_templates.hierarchical_structures import EntryNode, Node
 from aas_model.resource_template.operational import (
-    action_member_ref,
-    OperationalMqttInterfaces, OperationalMqttControlComponent,
-    OperationalMqttMappings, operational_variables, command_reply,
+    COMMAND_RESPONSE_SCHEMA, COMMAND_RESPONSE_SCHEMA_URL, COMMAND_SCHEMA, COMMAND_SCHEMA_URL,
+    OperationalMqttControlComponent, OperationalMqttInterfaces, OperationalMqttMappings, OperationalVariables,
 )
-from aas_model.resource_template.stations import StopperingStation
-from aas_pydantic import ExternalReference, Key, ModelReference, Qualifier, ReferenceElement
-from aas_model.resource_template.asset_interfaces_description import MQTT_INTERFACE, affordance_ref, mqtt_action
+from aas_model.resource_template.resources import StopperingStation
+from aas_model.resource_template.references import (
+    MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, skill_ref,
+)
 from aas_model.submodel_templates.control_component_instance import (
-    EXTENDED_SKILL_INTERFACE_REF, ExtendedSkill, SkillOperation, SkillInterfaceRelationship, OptionalVariable,
+    ExtendedSkill, SkillOperation, SkillInterfaceRelationship, OptionalVariable,
 )
-from aas_model.resource_template.control_component_instance import skill_ref
-from aas_model.resource_template.asset_interfaces_mapping_configuration import operation_sources
-from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import SourcesItem, SinksItem, Source, SourceId, Sink, SinkId, Sources, Sinks, DefaultPollingInterval
-from aas_model.submodel_templates import AimcMappingConfiguration, Transformation
+from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import SourcesItem, SinksItem
+from aas_model.submodel_templates import AimcMappingConfiguration, DmpResponseSink, DmpResponseSource
 from aas_pydantic.submodel_templates.capability_description import CapabilityRealizedBy, CapabilityRelations
-from aas_model.invocation_authoring import finalize_invocation_addresses
+from aas_model.submodel_templates.aid import DmpActionInput, DmpActionOutput, MqttAction, MqttActionForm
+from aas_model.json_schema_aid import datapoint_from_schema
+from aas_model.submodel_templates.hierarchical_structures import ResourceHierarchicalStructures
 
 
 def syntegon_stoppering() -> StopperingStation:
@@ -37,27 +31,24 @@ def syntegon_stoppering() -> StopperingStation:
     parent = "aauFillingLineAAS"
     resource_id = f"{BASE_URL}/aas/{identity}"
     resource = StopperingStation(
-        id_short=identity, id=resource_id, specific_asset_ids={"serialNumber": serial},
+        id_short=identity,
+        id=resource_id,
+        specific_asset_ids={"serialNumber": serial},
         nameplate=Nameplate(
-            id_short="Nameplate", URIOfTheProduct=URIOfTheProduct(value=resource_id),
+            URIOfTheProduct=resource_id,
             ManufacturerName=ManufacturerName(value={"en": "Syntegon Technology GmbH"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "Stoppering System 2024"}),
-            ManufacturerProductType=ManufacturerProductType(value="Pharmaceutical Stoppering Station"),
+            ManufacturerProductType="Pharmaceutical Stoppering Station",
             AddressInformation=SITE_ADDRESS.model_copy(deep=True),
-            OrderCodeOfManufacturer=OrderCodeOfManufacturer(value=serial),
-            SerialNumber=SerialNumber(value=serial), YearOfConstruction=YearOfConstruction(value="2024"),
-            CountryOfOrigin=CountryOfOrigin(value="DE"),
+            OrderCodeOfManufacturer=serial,
+            SerialNumber=serial,
+            YearOfConstruction="2024",
+            CountryOfOrigin="DE",
         ),
-        hierarchical_structures=HierarchicalStructures(
-            id_short="HierarchicalStructures", ArcheType=ArcheType(value="OneUp"),
+        hierarchical_structures=ResourceHierarchicalStructures(
+            ArcheType="OneUp",
             EntryNode=EntryNode(
-                id_short="EntryNode", global_asset_id=resource_id,
-                Node={parent: Node(id_short=parent, global_asset_id=f"{BASE_URL}/aas/{parent}")},
-                IsPartOf={f"PartOf_{parent}": IsPartOf(
-                    id_short=f"PartOf_{parent}",
-                    first=ExternalReference(key=(Key(type_="GlobalReference", value=resource_id),)),
-                    second=ExternalReference(key=(Key(type_="GlobalReference", value=f"{BASE_URL}/aas/{parent}"),)),
-                )},
+                global_asset_id=resource_id, Node={parent: Node(global_asset_id=f"{BASE_URL}/aas/{parent}")}
             ),
         ),
         asset_interfaces_description=OperationalMqttInterfaces(id_short="AssetInterfacesDescription"),
@@ -65,7 +56,7 @@ def syntegon_stoppering() -> StopperingStation:
         asset_interfaces_mapping_configuration=OperationalMqttMappings(
             id_short="AssetInterfacesMappingConfiguration",
         ),
-        variables=operational_variables(),
+        variables=OperationalVariables(),
     )
     mqtt = resource.asset_interfaces_description.InterfaceTemplateForMQTT[MQTT_INTERFACE]
     mqtt.title.value = "Syntegon Stoppering System"
@@ -74,17 +65,19 @@ def syntegon_stoppering() -> StopperingStation:
 
     # Stoppering: CMD/Stoppering answered on DATA/Stoppering (command / commandResponse).
     name = "Stoppering"
-    mqtt.InteractionMetadata.actions.property_name[name] = mqtt_action(name, synchronous=False)
+    mqtt.InteractionMetadata.actions.property_name[name] = MqttAction(
+        title=name,
+        synchronous="false",
+        input=datapoint_from_schema(COMMAND_SCHEMA, cls=DmpActionInput, schema_url=COMMAND_SCHEMA_URL),
+        output=datapoint_from_schema(
+            COMMAND_RESPONSE_SCHEMA, cls=DmpActionOutput, schema_url=COMMAND_RESPONSE_SCHEMA_URL
+        ),
+        forms=MqttActionForm(href=f"CMD/{name}", mqv_qos="2", mqv_responseTopic=f"DATA/{name}"),
+    )
     cci = resource.control_component_instance
     cci.Skills.Skill[name] = ExtendedSkill(
-        id_short=name, interface_reference=ReferenceElement(
-            semantic_id=EXTENDED_SKILL_INTERFACE_REF, value=affordance_ref(MQTT_INTERFACE, "actions", name),
-        ),
+        interface_reference=affordance_ref(MQTT_INTERFACE, "actions", name),
         operation=SkillOperation(
-            id_short="operation", qualifiers=[
-                Qualifier(type_="invocationDelegation", value=INVOCATION_URL_TEMPLATE, value_type="xs:string", kind="ConceptQualifier"),
-                Qualifier(type_="Asynchronous", value="false", value_type="xs:string", kind="ConceptQualifier"),
-            ],
             in_output_variable=[Property(id_short="Uuid", description="The UUID of the command")],
             output_variable=[
                 Property(id_short="State", description="The state of the command being executed"),
@@ -93,21 +86,28 @@ def syntegon_stoppering() -> StopperingStation:
         ),
     )
     cci.Endpoints.Endpoint[name] = SkillInterfaceRelationship(
-        id_short=name, first=skill_ref(name), second=affordance_ref(MQTT_INTERFACE, "actions", name),
+        first=skill_ref(name), second=affordance_ref(MQTT_INTERFACE, "actions", name),
     )
     resource.asset_interfaces_mapping_configuration.MappingConfigurations.value.append(
         AimcMappingConfiguration(
-            id_short=name, DefaultPollingInterval=DefaultPollingInterval(value="0.0"),
-            Sources=Sources(value=operation_sources(name, ["Uuid"])),
-            Sinks=Sinks(value=[SinksItem(id_short=name, Sink=Sink(value=action_member_ref(MQTT_INTERFACE, name, "input")), SinkId=SinkId(value=name))]),
-            Transformation=Transformation(value=(
-                f"function aimc_main(sources) return {{ {name} = {{ Uuid = sources.Uuid }} }} end"
-            )),
+            id_short=name, DefaultPollingInterval="0.0",
+            Sources=[SourcesItem(SourceId="Uuid", Source=operation_variable_ref(name, "Uuid"))],
+            Sinks=[SinksItem(SinkId=name, Sink=action_member_ref(MQTT_INTERFACE, name, "input"))],
+            Transformation=f"function aimc_main(sources) return {{ {name} = {{ Uuid = sources.Uuid }} }} end",
             # The correlated MQTT reply is the whole commandResponse.
-            **command_reply(MQTT_INTERFACE, name, outputs=("Uuid", "State", "Outcome")),
+            ResponseSources=[
+                DmpResponseSource(SourceId="Reply", Source=action_member_ref(MQTT_INTERFACE, name, "output")),
+            ],
+            ResponseTransformation=(
+                "function aimc_main(sources) local reply = sources.Reply "
+                "return { Uuid = reply.Uuid, State = reply.State, Outcome = reply.Outcome } end"
+            ),
+            ResponseSinks=[DmpResponseSink(SinkId=member, Sink=operation_variable_ref(name, member))
+                           for member in ("Uuid", "State", "Outcome")],
         ),
     )
     container = resource.capability_description.CapabilitySet["Processing"].CapabilityContainer[name]
-    container.CapabilityRelations = CapabilityRelations(id_short="CapabilityRelations", CapabilityRealizedBy={f"RealizedBy_{name}": CapabilityRealizedBy(id_short=f"RealizedBy_{name}", first=ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/CapabilityDescription"), Key(type_="SubmodelElementCollection", value="Processing"), Key(type_="SubmodelElementCollection", value=name), Key(type_="Capability", value="Capability"))), second=skill_ref(name))})
-    finalize_invocation_addresses(resource)
+    container.CapabilityRelations = CapabilityRelations(CapabilityRealizedBy={
+        f"RealizedBy_{name}": CapabilityRealizedBy(first=capability_ref("Processing", name), second=skill_ref(name)),
+    })
     return resource

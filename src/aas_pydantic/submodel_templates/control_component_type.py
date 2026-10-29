@@ -4,11 +4,11 @@ Source: Control Component Type/2/0/2/IDTA 02015-2-0-2 _Template_ControlComponent
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, List, Dict, Optional, TypeAlias
+from typing import ClassVar, Dict, Optional, TypeAlias
 from aas_pydantic import (
-    Property, ReferenceElement, Submodel, SubmodelElement, SubmodelElementCollection, SubmodelElementList,
+    DynamicSubmodelElementCollection, Property, ReferenceElement, Submodel, SubmodelElementCollection,
 )
-from pydantic import Field
+from pydantic import Field as _Field
 from aas_pydantic.aas_model import AasIdString
 
 class InterfaceProfile(Property):
@@ -65,6 +65,7 @@ class Disabled(Property):
     semantic_id: str = "https://admin-shell.io/idta/ControlComponent/Skill/Disabled/2/0"
     description: str = "Boolean property that defines if the skill is (currently) disabled, e.g. not licensed, tested, suitable."
     value_type: str = "xs:boolean"
+    FORM_CHOICES: ClassVar[tuple] = ('true', 'false')
 
 class Mode(Property):
     semantic_id: str = "https://admin-shell.io/idta/ControlComponent/Skill/Mode/2/0"
@@ -75,13 +76,14 @@ class Modes(SubmodelElementCollection):
     id_short: AasIdString = "Modes"
     semantic_id: str = "https://admin-shell.io/idta/ControlComponent/Skill/Modes/2/0"
     description: str = "Collection of operation, operating, operational or execution modes (depending on the standard), in which the skill is available/allowed to execute."
-    Mode: Dict[str, Mode_t] = Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 1})
+    Mode: Dict[str, Mode_t] = _Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 1})
 
 class Direction(Property):
     id_short: AasIdString = "Direction"
     semantic_id: str = "https://admin-shell.io/idta/ControlComponent/Skill/Parameter/Direction/2/0"
     description: str = "Indicates whether the parameter is an input (In) or an output (Out) of the skill. An InOut parameter can be set from outside and can also be changed from skill itself. "
     value_type: str = "xs:string"
+    FORM_CHOICES: ClassVar[tuple] = ('In', 'Out', 'InOut')
 
 class Type(Property):
     id_short: AasIdString = "Type"
@@ -89,11 +91,10 @@ class Type(Property):
     description: str = "Data type as string used to interpret the parameter. "
     value_type: str = "xs:string"
 
-class Values(SubmodelElementCollection):
+class Values(DynamicSubmodelElementCollection):
     id_short: AasIdString = "Values"
     semantic_id: str = "https://admin-shell.io/idta/ControlComponent/Skill/Parameter/Values/2/0"
     description: str = "Collection of properties of the accepted values that the parameter may take."
-    pass
 
 class Parameter(SubmodelElementCollection):
     id_short: AasIdString = "Parameter"

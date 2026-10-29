@@ -1,566 +1,266 @@
+"""A pydantic submodel class as the AAS submodel template it describes: the inverse of ``idta_generate.py``.
+
+The template is what the class would have been generated from (scripts/README.md, "Generated model behavior"):
+
+- every element carries its ``SMT/Cardinality``: a required field is ``One``, an optional one ``ZeroToOne``,
+  a map (``Dict[str, X]``) one element, named by its class or a placeholder (``Skill__00__``), that is
+  ``ZeroToMany``/``OneToMany``/``TwoToMany`` by its minimum (``Recursive`` where it contains itself) with
+  its ``AllowedIdShort``; a member of ``IDTA_ONE_OF`` is mandatory, as templates write alternatives;
+- a list is a SubmodelElementList with one example item, its list attributes kept;
+- a leaf keeps its semanticId, supplementalSemanticIds, description, displayName, valueType, contentType,
+  its default value as the example and ``FORM_CHOICES``/``ALLOWED_RANGE`` as ``FormChoices`` and
+  ``SMT/AllowedRange``;
+- a class's base classes are part of it: a template is complete, not a delta to the one it extends.
+
+Templates carry no class markers: they are for readers of the AAS.
+"""
+
 from __future__ import annotations
 
-from collections import OrderedDict
-import json
-from types import NoneType
+import re
 import typing
-from urllib import parse
-from enum import Enum
-import uuid
-
+from typing import Any, Optional
 
 from basyx.aas import model
+from basyx.aas.model import datatypes
+from basyx.aas.model.datatypes import XSD_TYPE_CLASSES, from_xsd
+from pydantic import BaseModel
 
-from typing import Any, Optional, Set, Union
-from pydantic import BaseModel, ConfigDict
+from aas_pydantic import aas_model, convert_util
+from aas_pydantic.convert_pydantic_model import _make_basyx_reference, _make_external_reference, _make_qualifiers
 
-# from aas_middleware.model.core import Reference
-from aas_pydantic import convert_util, aas_model
-
-from aas_pydantic.convert_util import (
-    AttributeFieldInfo,
-    convert_primitive_type_to_xsdtype,
-    get_attribute_field_infos,
-    get_template_id,
-    patch_id_short_with_temp_attribute,
-)
-
-import basyx.aas.adapter.json.json_serialization
-import logging
-
-logger = logging.getLogger(__name__)
+# Fields of an element that are its metadata or value, not child elements.
+_NOT_CHILDREN = frozenset({
+    *convert_util.META_FIELDS, "value", "value_type", "value_id", "content_type", "min", "max", "first", "second",
+    "entity_type", "global_asset_id", "type_value_list_element", "value_type_list_element",
+    "semantic_id_list_element", "order_relevant", "input_variable", "output_variable", "in_output_variable",
+})
+_GENERIC_ID_SHORT = aas_model.SubmodelElementCollection.model_fields["id_short"].default
+_MAP_CARDINALITY = {0: "ZeroToMany", 1: "OneToMany", 2: "TwoToMany"}
+# Where a template has to name a global asset but an example would mislead (AASd-014).
+_INTENTIONALLY_EMPTY = "https://admin-shell.io/SMT/General/IntentionallyEmpty"
 
 
-def convert_model_to_aas_template(
-    model_type: type[aas_model.AssetAdministrationShell],
-) -> model.DictIdentifiableStore[model.Identifiable]:
-    """
-    Convert a model aas to an Basyx AssetAdministrationShell and return it as a DictIdentifiableStore with all Submodels
+def convert_model_to_submodel_template(model_type: type[aas_model.Submodel], identifier: str) -> model.Submodel:
+    """The submodel template ``model_type`` describes, under the id ``identifier``."""
+    prototype = model_type.model_construct()
+    version, revision = getattr(model_type, "VERSION", ""), getattr(model_type, "REVISION", "")
+    return model.Submodel(
+        id_=identifier,
+        id_short=prototype.id_short or model_type.__name__,
+        kind=model.ModellingKind.TEMPLATE,
+        semantic_id=convert_util.get_semantic_id(prototype),
+        supplemental_semantic_id=_supplemental(prototype),
+        description=convert_util.get_basyx_description_from_model(prototype),
+        display_name=convert_util.get_basyx_display_name_from_model(prototype),
+        administration=model.AdministrativeInformation(version=version, revision=revision)
+        if version and revision else None,
+        submodel_element=_children(model_type, (model_type,)),
+    )
 
-    Args:
-        model_type (type[aas_model.AssetAdministrationShell]): Type of the model
 
-    Returns:
-        model.DictIdentifiableStore[model.Identifiable]: DictIdentifiableStore with all Submodels
-    """
-    aas_attribute_infos = get_attribute_field_infos(model_type)
-    aas_submodels = {}
-    aas_submodel_data_specifications = []
-    for attribute_info in aas_attribute_infos:
-        if attribute_info.name in ("asset_type", "derived_from", "specific_asset_ids"):
+# ── Children ─────────────────────────────────────────────────────────────────
+
+def _children(cls: type, stack: tuple) -> list:
+    one_of = set(getattr(cls, "IDTA_ONE_OF", ()))
+    children = []
+    for name, field in cls.model_fields.items():
+        if name in _NOT_CHILDREN or name.startswith("_"):
             continue
-        if typing.get_origin(attribute_info.field_info.annotation) == Union:
-            types_to_check = [
-                type_annotation
-                for type_annotation in typing.get_args(
-                    attribute_info.field_info.annotation
-                )
-                if type_annotation != NoneType
-            ]
-            optional_attribute_data_specification = (
-                convert_util.get_optional_data_specification_for_attribute(
-                    attribute_info
-                )
-            )
-            if optional_attribute_data_specification:
-                aas_submodel_data_specifications.append(
-                    optional_attribute_data_specification
-                )
-            union_attribute_data_specification = (
-                convert_util.get_union_data_specification_for_attribute(attribute_info)
-            )
-            if union_attribute_data_specification:
-                aas_submodel_data_specifications.append(
-                    union_attribute_data_specification
-                )
-
-        else:
-            types_to_check = [attribute_info.field_info.annotation]
-
-        for type_annotation in types_to_check:
-            submodel = convert_model_to_submodel_template(model_type=type_annotation)
-            attribute_data_specifications = (
-                convert_util.get_data_specification_for_attribute(
-                    attribute_info, submodel
-                )
-            )
-            aas_submodel_data_specifications.append(attribute_data_specifications)
-            if not attribute_info.field_info.is_required():
-                default_data_specification = (
-                    convert_util.get_default_data_specification_for_attribute(
-                        attribute_info, submodel
-                    )
-                )
-                aas_submodel_data_specifications.append(default_data_specification)
-
-            if submodel and not submodel.id_short in aas_submodels:
-                aas_submodels.update({submodel.id_short: submodel})
-
-    asset_information = model.AssetInformation(
-        asset_kind=model.AssetKind.TYPE,
-        asset_type=model.Identifier("Type"),
-        global_asset_id=model.Identifier(get_template_id(model_type)),
-    )
-
-    basyx_aas = model.AssetAdministrationShell(
-        asset_information=asset_information,
-        id_short=get_template_id(model_type),
-        id_=model.Identifier(get_template_id(model_type)),
-        description={
-            "en": f"Type aas with id {get_template_id(model_type)} that contains submodel templates"
-        },
-        submodel={
-            model.ModelReference.from_referable(submodel)
-            for submodel in aas_submodels.values()
-        },
-        embedded_data_specifications=convert_util.get_data_specification_for_model_template(
-            model_type
-        )
-        + aas_submodel_data_specifications,
-    )
-    obj_store: model.DictIdentifiableStore[model.Identifiable] = model.DictIdentifiableStore()
-    obj_store.add(basyx_aas)
-    for sm in aas_submodels.values():
-        obj_store.add(sm)
-    return obj_store
+        annotation = aas_model._resolve_annotation(aas_model._field_annotation(cls, name))
+        element = _child(cls, name, field, annotation, stack, name in one_of)
+        if element is not None:
+            children.append(element)
+    return children
 
 
-def _is_container_field(annotation: Any) -> bool:
-    """True for ``Dict[str, X]`` container fields whose children cannot be
-    represented as named fields in a template."""
-    if typing.get_origin(annotation) == dict:
-        return True
-    return False
+def _child(cls: type, name: str, field, annotation: Any, stack: tuple, one_of: bool):
+    id_short = aas_model._aas_field_name(cls, name)
+    extra = field.json_schema_extra if isinstance(field.json_schema_extra, dict) else {}
+    if typing.get_origin(annotation) is dict:
+        item_cls = _element_class(aas_model._container_item_type(annotation))
+        if item_cls is None:
+            return None
+        minimum = 1 if one_of else extra.get("idta_min_cardinality", 0)
+        recursive = _recurses(item_cls, stack)
+        cardinality = extra.get("idta_cardinality") or _MAP_CARDINALITY.get(minimum, "OneToMany")
+        default = item_cls.model_fields["id_short"].default
+        named = isinstance(default, str) and default and default != _generic_id_short(item_cls)
+        element = _element(item_cls, default if named else f"{id_short}__00__", stack, recursive)
+        qualifiers = [_cardinality(cardinality)]
+        if extra.get("idta_allowed_id_short"):
+            # IDTA writes an optional part in brackets (``Time[\d{2,3}]``).
+            pattern = re.sub(r"\((.+)\)\?$", r"[\1]", extra["idta_allowed_id_short"])
+            qualifiers.append(_qualifier("AllowedIdShort", pattern))
+        return _qualified(element, qualifiers)
+    element_cls = _element_class(annotation)
+    if element_cls is None:
+        return None
+    required = field.is_required() or one_of
+    recursive = _recurses(element_cls, stack)
+    element = _element(element_cls, id_short, stack, recursive, default=field.default)
+    return _qualified(element, [_cardinality("One" if required else "ZeroToOne")])
 
 
-def convert_model_instance_to_submodel_template(
-    model_instance: aas_model.Submodel,
-) -> Optional[model.Submodel]:
-    return convert_model_to_submodel_template(type(model_instance))
+def _recurses(cls: type, stack: tuple) -> bool:
+    """Whether ``cls`` is the kind of element one it is nested in is: they share a class of their own (a data
+    schema's ``items`` in an action's input schema: both are data schemas). The template then names it without
+    repeating its children, as IDTA templates write a recursive definition. The base layer's generic classes make
+    no kinship."""
+    own = _own_classes(cls)
+    return any(own & _own_classes(outer) for outer in stack)
 
 
-def convert_model_to_submodel_template(
-    model_type: type[aas_model.Submodel],
-) -> Optional[model.Submodel]:
-    if not model_type:
-        return
-    submodel_attributes = get_attribute_field_infos(model_type)
-    submodel_elements = []
-    submodel_element_data_specifications = []
-
-    for attribute_info in submodel_attributes:
-        if _is_container_field(attribute_info.field_info.annotation):
-            continue
-        if typing.get_origin(attribute_info.field_info.annotation) == Union:
-            types_to_check = [
-                type_annotation
-                for type_annotation in typing.get_args(
-                    attribute_info.field_info.annotation
-                )
-                if type_annotation != NoneType
-            ]
-            optional_attribute_data_specification = (
-                convert_util.get_optional_data_specification_for_attribute(
-                    attribute_info
-                )
-            )
-            if optional_attribute_data_specification:
-                submodel_element_data_specifications.append(
-                    optional_attribute_data_specification
-                )
-            union_attribute_data_specification = (
-                convert_util.get_union_data_specification_for_attribute(attribute_info)
-            )
-            if union_attribute_data_specification:
-                submodel_element_data_specifications.append(
-                    union_attribute_data_specification
-                )
-
-        else:
-            types_to_check = [attribute_info.field_info.annotation]
-
-        for counter, type_annotation in enumerate(types_to_check):
-            if len(types_to_check) > 1:
-                attribute_name = f"{attribute_info.name}_{counter}"
-            else:
-                attribute_name = attribute_info.name
-            submodel_element = create_submodel_element_template(
-                attribute_name=attribute_name, attribute_type=type_annotation
-            )
-            attribute_data_specifications = (
-                convert_util.get_data_specification_for_attribute(
-                    attribute_info, submodel_element
-                )
-            )
-            submodel_element_data_specifications.append(attribute_data_specifications)
-            immutable_attribute_data_specification = (
-                convert_util.get_immutable_data_specification_for_attribute(
-                    attribute_info
-                )
-            )
-            if immutable_attribute_data_specification:
-                submodel_element_data_specifications.append(
-                    immutable_attribute_data_specification
-                )
-            if not attribute_info.field_info.is_required():
-                default_data_specification = (
-                    convert_util.get_default_data_specification_for_attribute(
-                        attribute_info, submodel_element
-                    )
-                )
-                submodel_element_data_specifications.append(default_data_specification)
-            if submodel_element and not any(
-                stored_submodel_element.id_short == submodel_element.id_short
-                for stored_submodel_element in submodel_elements
-            ):
-                submodel_elements.append(submodel_element)
-
-    basyx_submodel = model.Submodel(
-        id_short=get_template_id(model_type),
-        id_=model.Identifier(get_template_id(model_type)),
-        # description=convert_util.get_basyx_description_from_model(model_type)=convert_util.get_basyx_description_from_model(model_type),
-        description={
-            "en": f"Submodel with id {get_template_id(model_type)} that contains submodel elements"
-        },
-        embedded_data_specifications=convert_util.get_data_specification_for_model_template(
-            model_type
-        )
-        + submodel_element_data_specifications,
-        semantic_id="",
-        submodel_element=submodel_elements,
-    )
-    return basyx_submodel
+def _own_classes(cls: type) -> set:
+    return {base for base in cls.__mro__
+            if isinstance(base, type) and issubclass(base, aas_model.SubmodelElement)
+            and base.__module__ != aas_model.__name__}
 
 
-def create_submodel_element_template(
-    attribute_name: str,
-    attribute_type: Union[
-        type[aas_model.SubmodelElementCollection],
-        type[str],
-        type[float],
-        type[int],
-        type[bool],
-        type[tuple],
-        type[list],
-        type[set],
-    ],
-) -> Optional[model.SubmodelElement]:
-    """
-    Create a basyx SubmodelElement from a model SubmodelElementCollection or a primitive type
-
-    Args:
-        attribute_name (str): Name of the attribute that is used for ID and id_short
-        attribute_type (Union[type[aas_model.SubmodelElementCollection], type[str], type[float], type[int], type[bool], type[tuple], type[list], type[set]): Type of the attribute
+def _element_class(annotation: Any) -> Optional[type]:
+    """The element class a field holds: the first member of a union (a template names one element)."""
+    annotation = aas_model._resolve_annotation(annotation)
+    if typing.get_origin(annotation) in (typing.Union, aas_model._UnionType):
+        members = [a for a in typing.get_args(annotation) if isinstance(a, type) and a is not type(None)]
+        annotation = members[0] if members else None
+    if isinstance(annotation, type) and issubclass(annotation, aas_model.SubmodelElement):
+        return annotation
+    return None
 
 
-    Returns:
-        model.SubmodelElement: basyx SubmodelElement
-    """
-    if not attribute_type:
-        return
-    if typing.get_origin(attribute_type) == dict:
-        # Dict[str, X] container fields (e.g. the base ``value`` /
-        # ``submodel_element`` containers) hold heterogeneous children that a
-        # named-field template cannot represent as a single element — skip.
-        return
-    if (
-        typing.get_origin(attribute_type) == list
-        or typing.get_origin(attribute_type) == tuple
-        or typing.get_origin(attribute_type) == set
-    ):
-        sml = create_submodel_element_list(attribute_name, attribute_type)
-        return sml
-    elif attribute_type == aas_model.Reference:
-        key = model.Key(
-            type_=model.KeyTypes.ASSET_ADMINISTRATION_SHELL,
-            value=get_template_id(attribute_type),
-        )
-        reference = model.ModelReference(key=(key,), type_="")
-        reference_element = model.ReferenceElement(
-            id_short=attribute_name,
-            value=reference,
-        )
-        return reference_element
-    elif typing.get_origin(attribute_type) is typing.Literal:
-        property = create_property(attribute_name, str)
-        return property
-    elif issubclass(attribute_type, Enum):
-        property = create_property(attribute_name, str)
-        return property
-    elif issubclass(attribute_type, aas_model.SubmodelElementCollection):
-        smc = create_submodel_element_collection(attribute_type)
-        return smc
-    elif issubclass(attribute_type, aas_model.SubmodelElementList):
-        return create_submodel_element_list_template(attribute_name, attribute_type)
-    elif issubclass(attribute_type, aas_model.Entity):
-        # Entities are represented as SMC templates in the basyx direction.
-        return create_submodel_element_collection(attribute_type)
-    elif issubclass(attribute_type, aas_model.Operation):
-        return model.Operation(id_short=attribute_name)
-    elif issubclass(attribute_type, aas_model.Capability):
-        return model.Capability(id_short=attribute_name)
-    elif issubclass(attribute_type, aas_model.Property):
-        return model.Property(id_short=attribute_name, value_type=model.datatypes.String)
-    elif issubclass(attribute_type, aas_model.MultiLanguageProperty):
-        return model.MultiLanguageProperty(id_short=attribute_name)
-    elif issubclass(attribute_type, aas_model.Range):
-        return model.Range(id_short=attribute_name, value_type=model.datatypes.String)
-    elif issubclass(attribute_type, aas_model.ReferenceElement):
-        return model.ReferenceElement(id_short=attribute_name)
-    elif issubclass(attribute_type, aas_model.RelationshipElement):
-        empty_ref = model.ExternalReference(
-            key=(
-                model.Key(
-                    type_=model.KeyTypes.GLOBAL_REFERENCE,
-                    value="https://example.com/reference",
-                ),
-            )
-        )
-        return model.RelationshipElement(
-            id_short=attribute_name, first=empty_ref, second=empty_ref
-        )
-    elif issubclass(attribute_type, aas_model.File):
-        return create_file(attribute_type)
-    elif issubclass(attribute_type, aas_model.Blob):
-        return create_blob(attribute_type)
-    else:
-        property = create_property(attribute_name, attribute_type)
-
-        return property
+def _generic_id_short(cls: type) -> str:
+    """The id_short default of the base element class ``cls`` derives from (``Property``, …)."""
+    for base in cls.__mro__:
+        if base.__module__ == aas_model.__name__ and "id_short" in base.model_fields:
+            return base.model_fields["id_short"].default
+    return _GENERIC_ID_SHORT
 
 
-def create_submodel_element_list_template(
-    attribute_name: str,
-    sml_type: type[aas_model.SubmodelElementList],
-) -> model.SubmodelElementList:
-    """Create a basyx SubmodelElementList template from a SubmodelElementList subclass.
+# ── Elements ─────────────────────────────────────────────────────────────────
 
-    The item element type is inferred from the ``value`` field annotation.
-    """
-    ann = sml_type.model_fields["value"].annotation
-    args = typing.get_args(ann)
-    item_type = args[0] if args else None
-
-    submodel_elements = []
-    if (
-        item_type
-        and item_type is not NoneType
-        and item_type is not typing.Any
-        and item_type is not aas_model.SubmodelElement
-    ):
-        el = create_submodel_element_template(attribute_name, item_type)
-        if el is not None:
-            submodel_elements.append(el)
-
-    return model.SubmodelElementList(
-        id_short=attribute_name,
-        type_value_list_element=(
-            type(submodel_elements[0]) if submodel_elements else None
-        ),
-        value_type_list_element=(
-            submodel_elements[0].value_type
-            if submodel_elements and isinstance(submodel_elements[0], model.Property)
-            else None
-        ),
-        value=submodel_elements,
-        order_relevant=True,
-    )
-
-
-def create_property(
-    attribute_name: str,
-    attribute_type: Union[type[str], type[float], type[int], type[bool]],
-) -> model.Property:
-    if issubclass(attribute_type, Enum):
-        attribute_type = str
-
-    property = model.Property(
-        id_short=attribute_name,
-        value_type=convert_primitive_type_to_xsdtype(attribute_type),
-        value=None,
-    )
-    return property
-
-
-def create_submodel_element_collection(
-    model_sec: type[aas_model.SubmodelElementCollection],
-) -> model.SubmodelElementCollection:
-    value = []
-    smc_attributes = get_attribute_field_infos(model_sec)
-    submodel_element_data_specifications = []
-
-    for attribute_info in smc_attributes:
-        if _is_container_field(attribute_info.field_info.annotation):
-            continue
-        if typing.get_origin(attribute_info.field_info.annotation) == Union:
-            types_to_check = [
-                type_annotation
-                for type_annotation in typing.get_args(
-                    attribute_info.field_info.annotation
-                )
-                if type_annotation != NoneType
-            ]
-            optional_attribute_data_specification = (
-                convert_util.get_optional_data_specification_for_attribute(
-                    attribute_info
-                )
-            )
-            if optional_attribute_data_specification:
-                submodel_element_data_specifications.append(
-                    optional_attribute_data_specification
-                )
-            union_attribute_data_specification = (
-                convert_util.get_union_data_specification_for_attribute(attribute_info)
-            )
-            if union_attribute_data_specification:
-                submodel_element_data_specifications.append(
-                    union_attribute_data_specification
-                )
-        elif attribute_info.field_info.annotation == NoneType:
-            continue
-        else:
-            types_to_check = [attribute_info.field_info.annotation]
-
-        for counter, type_annotation in enumerate(types_to_check):
-            if len(types_to_check) > 1:
-                attribute_name = f"{attribute_info.name}_{counter}"
-            else:
-                attribute_name = attribute_info.name
-            submodel_element = create_submodel_element_template(
-                attribute_name=attribute_name, attribute_type=type_annotation
-            )
-            attribute_data_specifications = (
-                convert_util.get_data_specification_for_attribute(
-                    attribute_info, submodel_element
-                )
-            )
-            submodel_element_data_specifications.append(attribute_data_specifications)
-            immutable_attribute_data_specification = (
-                convert_util.get_immutable_data_specification_for_attribute(
-                    attribute_info
-                )
-            )
-            if immutable_attribute_data_specification:
-                submodel_element_data_specifications.append(
-                    immutable_attribute_data_specification
-                )
-            if not attribute_info.field_info.is_required():
-                default_data_specification = (
-                    convert_util.get_default_data_specification_for_attribute(
-                        attribute_info, submodel_element
-                    )
-                )
-                submodel_element_data_specifications.append(default_data_specification)
-            if submodel_element and not any(
-                stored_submodel_element.id_short == submodel_element.id_short
-                for stored_submodel_element in value
-            ):
-                value.append(submodel_element)
-
-    id_short = get_template_id(model_sec)
-
-    smc = model.SubmodelElementCollection(
+def _element(cls: type, id_short: Optional[str], stack: tuple, recursive: bool = False, default: Any = None):
+    """The template element of ``cls`` (its children unless it recurses into itself)."""
+    prototype = default if isinstance(default, cls) else cls.model_construct()
+    common = dict(
         id_short=id_short,
-        value=value,
-        # description=convert_util.get_basyx_description_from_model(model_sec),
-        description={
-            "en": f"Submodel element collection with id {id_short} that contains submodel elements"
-        },
-        embedded_data_specifications=convert_util.get_data_specification_for_model_template(
-            model_sec
-        )
-        + submodel_element_data_specifications,
-        semantic_id="",
+        semantic_id=convert_util.get_semantic_id(prototype),
+        supplemental_semantic_id=_supplemental(prototype),
+        description=convert_util.get_basyx_description_from_model(prototype),
+        display_name=convert_util.get_basyx_display_name_from_model(prototype),
+        qualifier=_make_qualifiers(getattr(prototype, "qualifiers", None) or []) + _restrictions(cls),
     )
-    return smc
+    children = [] if recursive else None
+    if issubclass(cls, aas_model.SubmodelElementList):
+        return _list(cls, prototype, common, stack, recursive)
+    if issubclass(cls, aas_model.Entity):
+        self_managed = prototype.entity_type == "SelfManagedEntity"
+        return model.Entity(
+            entity_type=model.EntityType.SELF_MANAGED_ENTITY if self_managed else model.EntityType.CO_MANAGED_ENTITY,
+            global_asset_id=(prototype.global_asset_id or _INTENTIONALLY_EMPTY) if self_managed else None,
+            statement=children if recursive else _children(cls, stack + (cls,)), **common)
+    if issubclass(cls, aas_model.SubmodelElementCollection):
+        return model.SubmodelElementCollection(
+            value=children if recursive else _children(cls, stack + (cls,)), **common)
+    if issubclass(cls, aas_model.Property):
+        value_type = XSD_TYPE_CLASSES.get(prototype.value_type, datatypes.String)
+        return model.Property(value_type=value_type, value=_value(prototype.value, value_type), **common)
+    if issubclass(cls, aas_model.MultiLanguageProperty):
+        return model.MultiLanguageProperty(value=model.MultiLanguageTextType(prototype.value)
+                                           if prototype.value else None, **common)
+    if issubclass(cls, aas_model.Range):
+        value_type = XSD_TYPE_CLASSES.get(prototype.value_type, datatypes.String)
+        return model.Range(value_type=value_type, min=_value(prototype.min, value_type),
+                           max=_value(prototype.max, value_type), **common)
+    if issubclass(cls, aas_model.File):
+        return model.File(content_type=prototype.content_type or None, value=prototype.value or None, **common)
+    if issubclass(cls, aas_model.Blob):
+        return model.Blob(content_type=prototype.content_type or None, value=prototype.value or None, **common)
+    if issubclass(cls, aas_model.ReferenceElement):
+        return model.ReferenceElement(value=_make_basyx_reference(prototype.value) if prototype.value else None,
+                                      **common)
+    if issubclass(cls, aas_model.RelationshipElement):
+        empty = model.ExternalReference((model.Key(model.KeyTypes.GLOBAL_REFERENCE, _INTENTIONALLY_EMPTY),))
+        return model.RelationshipElement(
+            first=_make_basyx_reference(prototype.first) if prototype.first else empty,
+            second=_make_basyx_reference(prototype.second) if prototype.second else empty, **common)
+    if issubclass(cls, aas_model.Capability):
+        return model.Capability(**common)
+    if issubclass(cls, aas_model.Operation):
+        return model.Operation(**common)
+    raise TypeError(f"{cls.__name__} is no element a template can hold")
 
 
-def create_submodel_element_list(
-    name: str, attribute_type: Union[type[tuple], type[list], type[set]]
-) -> model.SubmodelElementList:
-    submodel_elements = []
-    submodel_element_ids = OrderedDict()
-    for el in typing.get_args(attribute_type):
-        # TODO: potentially check here because of Unions and Optional types inside lists and sets...
-        submodel_element = create_submodel_element_template(name, el)
-        if isinstance(submodel_element, model.SubmodelElementCollection):
-            if submodel_element.id_short in submodel_element_ids:
-                raise ValueError(
-                    f"Submodel element collection with id {submodel_element.id_short} already exists in list"
-                )
-            submodel_element_ids.update({submodel_element.id_short: None})
-            patch_id_short_with_temp_attribute(submodel_element)
-        submodel_element.id_short = None
-        submodel_elements.append(submodel_element)
-
-    if submodel_elements and isinstance(submodel_elements[0], model.Property):
-        if len(typing.get_args(attribute_type)) > 1 and not all(
-            arg is typing.get_args(attribute_type)[0]
-            for arg in typing.get_args(attribute_type)
-        ):
-            raise ValueError(
-                f"Submodel element list with different types is not supported. Please use a SubmodelElementCollection instead."
-            )
-        value_type_list_element = submodel_elements[0].value_type
-        type_value_list_element = type(submodel_elements[0])
-    elif submodel_elements and isinstance(
-        submodel_elements[0],
-        model.Reference
-        | model.SubmodelElementCollection
-        | model.ReferenceElement
-        | model.SubmodelElementList,
-    ):
-        value_type_list_element = None
-        type_value_list_element = type(submodel_elements[0])
-    else:
-        value_type_list_element = convert_primitive_type_to_xsdtype(str)
-        type_value_list_element = model.Property
-
-    if typing.get_origin(attribute_type) == set:
-        ordered = False
-        iterable_type = "set"
-    elif typing.get_origin(attribute_type) == tuple:
-        ordered = True
-        iterable_type = "tuple"
-    elif typing.get_origin(attribute_type) == list:
-        ordered = True
-        iterable_type = "list"
-    else:
-        raise ValueError(
-            f"Type {attribute_type} is not supported for SubmodelElementList, provided subclass of list, tuple or set"
-        )
-
-    sml = model.SubmodelElementList(
-        id_short=f"{iterable_type}_of_{get_template_id(typing.get_args(attribute_type)[0])}",
-        type_value_list_element=type_value_list_element,
-        value_type_list_element=value_type_list_element,
-        value=submodel_elements,
-        order_relevant=ordered,
-    )
-    return sml
+def _list(cls: type, prototype, common: dict, stack: tuple, recursive: bool) -> model.SubmodelElementList:
+    item_cls = getattr(cls, "item_type", None)
+    item_cls = item_cls if isinstance(item_cls, type) and issubclass(item_cls, aas_model.SubmodelElement) else None
+    declared = prototype.type_value_list_element
+    type_value = (getattr(model, declared) if isinstance(declared, str) else declared) if declared else (
+        _basyx_class(item_cls) or model.SubmodelElementCollection)
+    value_type = prototype.value_type_list_element
+    # An example item where the item is described: a container, or a leaf with a semanticId of its own.
+    items = []
+    described = item_cls is not None and (
+        issubclass(item_cls, (aas_model.SubmodelElementCollection, aas_model.Entity))
+        or item_cls.model_fields["semantic_id"].default)
+    if described and not recursive and not _recurses(item_cls, stack):
+        item = _element(item_cls, None, stack + (cls,))
+        items = [_qualified(item, [_cardinality(getattr(cls, "ITEM_CARDINALITY", "") or "One")])]
+    if value_type is None and item_cls is not None and "value_type" in item_cls.model_fields:
+        value_type = item_cls.model_fields["value_type"].default  # AASd-109: a list of values declares their type
+    return model.SubmodelElementList(
+        type_value_list_element=type_value,
+        value_type_list_element=XSD_TYPE_CLASSES.get(value_type, value_type) if isinstance(value_type, str)
+        else value_type,
+        semantic_id_list_element=_make_external_reference(prototype.semantic_id_list_element)
+        if prototype.semantic_id_list_element else None,
+        order_relevant=prototype.order_relevant, value=items, **common)
 
 
-def create_file(attribute_type: type[aas_model.File]) -> model.File:
-    """
-    Function generates a basyx file objects from a pydantic File.
-
-    Args:
-        attribute_value (aas_model.File): pydantic File instance.
-
-    Returns:
-        model.File: Basyx file.
-    """
-    return model.File(id_short=get_template_id(attribute_type), content_type="unknown")
+def _basyx_class(cls: Optional[type]) -> Optional[type]:
+    from aas_pydantic.convert_pydantic_model import _aas_cls_to_basyx
+    return _aas_cls_to_basyx(cls) if cls is not None else None
 
 
-def create_blob(attribute_type: type[aas_model.Blob]) -> model.Blob:
-    """
-    Function generates a basyx file objects from a pydantic File.
+# ── Metadata ─────────────────────────────────────────────────────────────────
 
-    Args:
-        attribute_value (aas_model.File): pydantic File instance.
+def _supplemental(prototype: BaseModel) -> list:
+    return [_make_external_reference(s) for s in (getattr(prototype, "supplemental_semantic_ids", None) or [])]
 
-    Returns:
-        model.File: Basyx file.
-    """
-    return model.Blob(id_short=get_template_id(attribute_type), content_type="unknown")
+
+def _value(lexical: Any, value_type):
+    """A default value, typed as its value type (none when empty)."""
+    if lexical in (None, ""):
+        return None
+    if isinstance(lexical, bool):
+        lexical = "true" if lexical else "false"
+    try:
+        return from_xsd(str(lexical), value_type)
+    except (ValueError, TypeError) as error:
+        raise ValueError(f"the default {lexical!r} is not a {value_type.__name__}") from error
+
+
+def _qualifier(type_: str, value: str) -> model.Qualifier:
+    return model.Qualifier(type_, datatypes.String, value=value, kind=model.QualifierKind.TEMPLATE_QUALIFIER)
+
+
+def _cardinality(value: str) -> model.Qualifier:
+    return _qualifier("SMT/Cardinality", value)
+
+
+def _restrictions(cls: type) -> list:
+    """A Property's value restrictions as the template qualifiers they come from."""
+    qualifiers = []
+    if getattr(cls, "FORM_CHOICES", ()):
+        qualifiers.append(_qualifier("FormChoices", ";".join(cls.FORM_CHOICES)))
+    if getattr(cls, "ALLOWED_RANGE", ()):
+        qualifiers.append(_qualifier("SMT/AllowedRange", f"[{cls.ALLOWED_RANGE[0]}, {cls.ALLOWED_RANGE[1]}]"))
+    return qualifiers
+
+
+def _qualified(element, qualifiers: list):
+    """``element`` with ``qualifiers`` first (its cardinality leads, as templates write it)."""
+    existing = list(element.qualifier)
+    element.qualifier.clear()
+    for qualifier in (*qualifiers, *existing):
+        element.qualifier.add(qualifier)
+    return element

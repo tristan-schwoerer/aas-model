@@ -12,10 +12,9 @@ from __future__ import annotations
 
 import pytest
 
-from aas_model._serde import parse_submodel_dict
+from aas_json import parse_submodel_dict
 from aas_model import Resource, build_from_model
-from aas_model.resource_template.parameters import ParameterItem, ResourceParameters
-from aas_model.submodel_templates.parameters import ParamProp
+from aas_model.submodel_templates.parameters import ParamProp, ParameterItem, ResourceParameters
 from aas_model.submodel_templates.variables import (
     VariableItem, VariableProp, Variables,
 )

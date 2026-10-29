@@ -7,11 +7,11 @@ from basyx.aas import model
 from basyx.aas.adapter.json import json_serialization
 
 from aas_model import Resource, inject_ids
-from aas_model._serde import parse_submodel_dict
-from aas_pydantic import AAS, File, convert_model_to_aas
+from aas_json import parse_submodel_dict
+from aas_pydantic import AAS, convert_model_to_aas
 from aas_pydantic.convert_util import strip_temp_id_short_attributes
 from aas_pydantic.submodel_templates.time_series import (
-    EndTime, Endpoint, ExternalSegment, InternalSegment, LinkedSegment, Metadata,
+    EndTime, Endpoint, ExternalSegment, File_time_series, InternalSegment, LinkedSegment, Metadata,
     Name, Query, Record, Records, SampleAccelerationX, Segments, Time, TimeSeries,
 )
 
@@ -33,8 +33,7 @@ def series():
                     ),
                 }),
             )},
-            ExternalSegment={"Archive": ExternalSegment(File=File(
-                semantic_id="https://admin-shell.io/idta/TimeSeries/File/1/1",
+            ExternalSegment={"Archive": ExternalSegment(File=File_time_series(
                 content_type="application/json", value="https://example.test/series.json",
             ))},
             LinkedSegment={"Database": LinkedSegment(

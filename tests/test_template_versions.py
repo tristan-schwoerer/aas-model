@@ -2,13 +2,14 @@
 
 import importlib
 import json
+import re
 from pathlib import Path
 import runpy
 
 import pytest
 
 from aas_model.json_schema_aid import datapoint_from_schema, schema_from_datapoint
-from aas_model._serde import parse_submodel_dict
+from aas_json import parse_submodel_dict
 from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
 from aas_pydantic import Submodel
 from aas_pydantic.submodel_templates.asset_interfaces_description import (
@@ -34,8 +35,12 @@ def test_generated_model_matches_its_selected_template(relative_path):
     model = getattr(module, class_name)
 
     assert model.model_fields["semantic_id"].default == GENERATOR["extract_semantic_id"](source)
-    assert model.VERSION == str(source.get("administration", {}).get("version", "1"))
-    assert model.REVISION == str(source.get("administration", {}).get("revision", "0"))
+    # The version is the template's administration, else the one its semanticId ends in (…/1/1/Submodel).
+    administration = source.get("administration") or {}
+    version = re.search(r"/(\d+)/(\d+)(?:/Submodel)?$", model.model_fields["semantic_id"].default)
+    expected = ((administration["version"], administration["revision"]) if administration.get("version")
+                else version.groups())
+    assert (model.VERSION, model.REVISION) == expected
     assert f"Source: {relative_path}" in module.__doc__
 
 

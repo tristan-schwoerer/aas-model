@@ -5,23 +5,20 @@ from hashlib import sha256
 
 import pytest
 
-from aas_model._serde import parse_submodel_dict
-from aas_model.json_schema_aid import (
-    datapoint_from_schema,
-    load_schema,
-    populate_datapoint,
-    schema_from_datapoint,
-)
+from aas_json import parse_submodel_dict
+from aas_model.json_schema_aid import datapoint_from_schema, load_schema, populate_datapoint, schema_from_datapoint
 from aas_model.submodel_templates.aid import (
-    DmpActionInput,
-    DmpActionOutput,
-    DmpAssetInterfacesDescription,
-    DmpProperty,
+    DmpActionInput, DmpActionOutput, DmpAssetInterfacesDescription, DmpProperty, MqttAction, MqttActionForm,
+    MqttForm,
 )
 from aas_model.testing import build_aid, mqtt_interface
 from aas_pydantic import Qualifier
 
 from test_serde import _roundtrip
+from aas_model.resource_template.operational import (
+    COMMAND_RESPONSE_SCHEMA, COMMAND_RESPONSE_SCHEMA_URL, COMMAND_SCHEMA_URL, STATION_STATE_SCHEMA_URL,
+)
+from aas_pydantic.submodel_templates.asset_interfaces_description import Title
 
 
 def test_schema_required_fields_keep_authored_order_when_resolving_allof(tmp_path):
@@ -107,26 +104,45 @@ def test_unrepresentable_keywords_fail_instead_of_vanishing():
 def test_qualifiers_survive_aas_json_serialization_and_parse():
     aid = build_aid(mqtt=mqtt_interface("mqtt://broker.example:1883/"))
     action = aid.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata.actions.property_name
-    from aas_model.resource_template.asset_interfaces_description import (
-        mqtt_action, mqtt_property,
-    )
 
-    action["Send"] = mqtt_action(
-        "Send", input_schema={"type": "object", "required": ["Uuid"],
-                              "properties": {"Uuid": {"type": "string"},
-                                             "Nested": {"type": "object",
-                                                        "required": ["Count"],
-                                                        "properties": {"Count": {
-                                                            "type": "integer"}}}}},
-        output_schema={"type": "object", "required": ["State"],
-                       "properties": {"State": {"type": "string"}}},
+    action["Send"] = MqttAction(
+        title="Send",
+        synchronous="false",
+        input=datapoint_from_schema(
+            {
+                "type": "object",
+                "required": ["Uuid"],
+                "properties": {
+                    "Uuid": {"type": "string"},
+                    "Nested": {"type": "object", "required": ["Count"], "properties": {"Count": {"type": "integer"}}},
+                },
+            },
+            cls=DmpActionInput,
+            schema_url=COMMAND_SCHEMA_URL,
+        ),
+        output=datapoint_from_schema(
+            {"type": "object", "required": ["State"], "properties": {"State": {"type": "string"}}},
+            cls=DmpActionOutput,
+            schema_url=COMMAND_RESPONSE_SCHEMA_URL,
+        ),
+        forms=MqttActionForm(href="CMD/Send", mqv_qos="2", mqv_responseTopic="DATA/Send"),
     )
-    aid.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata.properties.property_name[
-        "Status"
-    ] = mqtt_property("Status", "/DATA/Status", schema={
-        "type": "object", "title": "Status", "required": ["Mode"],
-        "properties": {"Mode": {"type": "string"}},
-    })
+    aid.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata.properties.property_name["Status"] = (
+        datapoint_from_schema(
+            {
+                "type": "object",
+                "title": "Status",
+                "required": ["Mode"],
+                "properties": {"Mode": {"type": "string"}},
+            },
+            key="Status",
+            schema_url=STATION_STATE_SCHEMA_URL,
+            title=Title(value="Status"),
+            observable="true",
+            readOnly="true",
+            forms=MqttForm(href="/DATA/Status", mqv_retain="true", mqv_qos="0"),
+        )
+    )
     document = _roundtrip(aid)
     restored = parse_submodel_dict(json.loads(json.dumps(document)),
                                    DmpAssetInterfacesDescription)
@@ -151,7 +167,6 @@ def test_qualifiers_survive_aas_json_serialization_and_parse():
 
 def test_json_scalar_consts_and_arbitrary_member_names_serialize_and_round_trip():
     from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
-    from aas_model.resource_template.asset_interfaces_description import mqtt_action
 
     schema = {
         "type": "object",
@@ -164,7 +179,15 @@ def test_json_scalar_consts_and_arbitrary_member_names_serialize_and_round_trip(
     }
     aid = build_aid(mqtt=mqtt_interface("mqtt://broker.example:1883/"))
     actions = aid.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata.actions
-    actions.property_name["Send"] = mqtt_action("Send", input_schema=schema)
+    actions.property_name["Send"] = MqttAction(
+        title="Send",
+        synchronous="false",
+        input=datapoint_from_schema(schema, cls=DmpActionInput, schema_url=COMMAND_SCHEMA_URL),
+        output=datapoint_from_schema(
+            COMMAND_RESPONSE_SCHEMA, cls=DmpActionOutput, schema_url=COMMAND_RESPONSE_SCHEMA_URL
+        ),
+        forms=MqttActionForm(href="CMD/Send", mqv_qos="2", mqv_responseTopic="DATA/Send"),
+    )
 
     document = _roundtrip(aid)
     serialized_text = json.dumps(document)

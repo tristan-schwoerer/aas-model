@@ -1,22 +1,24 @@
-"""Resource-template builders for event affordances: MQTT events and OPC UA
-events (WoT EventAffordance), added to an interface and serialized."""
+"""Event affordances (WoT EventAffordance) authored with their classes: MQTT events and OPC UA events, the
+notification's data schema built with ``datapoint_from_schema``, added to an interface and serialized."""
 
 from __future__ import annotations
 
 import json
 
 from aas_pydantic.convert_pydantic_model import convert_model_to_submodel
+from aas_pydantic.submodel_templates.asset_interfaces_description import ContentType
 from basyx.aas.adapter.json import AASToJsonEncoder
 
-from aas_model._serde import parse_submodel_dict
+from aas_json import parse_submodel_dict
 from aas_model.constants import (
     AID_EVENT_DATA, AID_EVENT_DEFINITION, AID_OPCUA_EVENT_FIELD, AID_OPCUA_EVENT_TYPE,
 )
-from aas_model.resource_template.asset_interfaces_description import (
-    add_event, mqtt_event, opcua_event,
-)
+from aas_model.json_schema_aid import datapoint_from_schema
 from aas_model.resource_template.operational import MqttInterfaces
-from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
+from aas_model.submodel_templates.aid import (
+    DmpAssetInterfacesDescription, DmpEvent, DmpEventData, DmpEvents, DmpForm, MqttForm, OpcuaEvent, OpcuaEventData,
+    OpcuaEvents,
+)
 from aas_model.testing import opcua_interface
 
 
@@ -40,8 +42,14 @@ def _events(serialized: dict, interface: str) -> dict:
 def test_mqtt_event_authors_only_what_differs_from_the_wot_defaults():
     aid = MqttInterfaces(id_short="AssetInterfacesDescription")
     aid.id = "urn:test:aid"
-    add_event(aid.InterfaceTemplateForMQTT["interface_mqtt"], mqtt_event(
-        "Finished", "EVT/Finished", schema={"type": "object", "properties": {"Code": {"type": "integer"}}}))
+    aid.InterfaceTemplateForMQTT["interface_mqtt"].InteractionMetadata.events = DmpEvents(property_name={
+        "Finished": DmpEvent(
+            title="Finished",
+            data=datapoint_from_schema({"type": "object", "properties": {"Code": {"type": "integer"}}},
+                                       cls=DmpEventData),
+            forms=MqttForm(href="EVT/Finished", mqv_qos="1"),
+        ),
+    })
 
     finished = _child(_events(_serialized(aid), "interface_mqtt"), "Finished")
     assert _semantic(finished) == AID_EVENT_DEFINITION
@@ -66,10 +74,17 @@ def test_interfaces_get_an_events_container_only_with_events():
 
 def test_opcua_event_selects_fields_and_filters_by_event_type():
     interface = opcua_interface("opc.tcp://device:4840", properties={"State": "/?id=ns=1;s=State"})
-    add_event(interface, opcua_event("Transition", "i=2253", {
-        "Message": {"type": "string"},
-        "ToStateId": ({"type": "string"}, "0:ToState/0:Id"),
-    }, event_type="i=2378"))
+    # A field that is not the namespace-0 BrowseName of the same name names its browse path.
+    interface.InteractionMetadata.events = OpcuaEvents(property_name={
+        "Transition": OpcuaEvent(
+            title="Transition", uav_eventType="i=2378",
+            data=datapoint_from_schema({"type": "object", "properties": {
+                "Message": {"type": "string"},
+                "ToStateId": {"type": "string", "uav_eventField": "0:ToState/0:Id"},
+            }}, cls=OpcuaEventData),
+            forms=DmpForm(href="/?id=i=2253", contentType=ContentType(value="application/octet-stream")),
+        ),
+    })
     aid = DmpAssetInterfacesDescription(id_short="AssetInterfacesDescription", id="urn:test:aid",
                                         InterfaceTemplateForOPCUA={"interface_opcua": interface})
     serialized = _serialized(aid)

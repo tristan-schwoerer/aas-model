@@ -1,20 +1,20 @@
-"""MQTT binding: request/reply actions (MQTT 5 Response Topic + Correlation
-Data). The other MQTT terms (``mqv_controlPacket``, ``mqv_qos``,
-``mqv_retain``) are AID's own, on the generated form."""
+"""MQTT binding: AID's MQTT form terms (``mqv_controlPacket``, ``mqv_qos``,
+``mqv_retain``, the generated ``forms_MQTT``) and request/reply actions (MQTT 5
+Response Topic + Correlation Data)."""
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, Optional
+from typing import Dict, Optional
 
 from aas_pydantic import Property
 from aas_pydantic.aas_model import AasIdString
 from aas_pydantic.submodel_templates.asset_interfaces_description import (
-    EndpointMetadata_t, InterfaceTemplateForMQTT as _BaseMqttInterface, Title,
+    EndpointMetadata_t, InterfaceTemplateForMQTT as _BaseMqttInterface, Title, forms_MQTT,
 )
 
 from aas_model.constants import AID_MQTT_RESPONSE_TOPIC
 from aas_model.submodel_templates.aid.affordances import DmpAction, DmpActions, DmpInteractionMetadata
-from aas_model.submodel_templates.aid.forms import DmpActionForm
+from aas_model.submodel_templates.aid.forms import DmpActionForm, DmpForm
 from aas_model.submodel_templates.aid.interface import DmpEndpointMetadata
 
 
@@ -28,10 +28,13 @@ class MqvResponseTopic(Property):
     description: str = "Topic the action's result is published to (MQTT 5 Response Topic); the reply echoes the request's Correlation Data."
 
 
-class MqttActionForm(DmpActionForm):
+class MqttForm(DmpForm, forms_MQTT):
+    """The form of an MQTT property or event: ``href`` is the topic."""
+
+
+class MqttActionForm(DmpActionForm, forms_MQTT):
     """The form of an MQTT action: ``href`` is the request topic,
     ``mqv_controlPacket`` defaults to ``publish`` (WoT MQTT binding)."""
-    protocol: ClassVar[Optional[str]] = "mqv"
     mqv_responseTopic: Optional[MqvResponseTopic] = None
 
 

@@ -10,17 +10,15 @@ from aas_pydantic.convert_pydantic_model import convert_model_to_aas
 from aas_pydantic.convert_util import strip_temp_id_short_attributes
 from basyx.aas.adapter.json import json_serialization
 
-from aas_model._serde import parse_submodel_dict
-from aas_model.constants import (
-    AID_EVENT_DATA, AID_EVENT_DEFINITION, AIMC_RESPONSE_TRANSFORMATION, BASE_URL,
-)
+from aas_json import parse_submodel_dict
+from aas_model.constants import AID_EVENT_DATA, AID_EVENT_DEFINITION, AIMC_RESPONSE_TRANSFORMATION, BASE_URL
 from aas_model.resource_template import ResourceTypeAAS
-from aas_model.resource_template.asset_interfaces_mapping_configuration import (
-    mapping_configuration, response_sink, response_source, sink, source,
+from aas_model.submodel_templates import (
+    Aimc, AimcMappingConfiguration, AimcMappingConfigurations, DmpResponseSink, DmpResponseSource,
 )
-from aas_model.submodel_templates import Aimc, AimcMappingConfigurations
 from aas_model.submodel_templates.aid import DmpAssetInterfacesDescription
 from aas_model.testing import aimc_ref, mqtt_interface
+from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import SinksItem, SourcesItem
 
 
 def _submodels(**submodels) -> dict:
@@ -87,15 +85,22 @@ def _mqtt(*path: str):
 def _start_mapping():
     """MQTT 5 request/reply: the command, the reply's Result member, and a
     best-effort copy of it into the AAS."""
-    return mapping_configuration(
+    return AimcMappingConfiguration(
         id_short="Start",
-        sources=[source("Start", aimc_ref("{aas_id}/submodels/ControlComponentInstance",
-                                          "Skills", "Start", "operation"))],
-        sinks=[sink("Start", _mqtt("actions", "Start"))],
-        transformation="function aimc_main(sources) return { Start = sources.Start } end",
-        response_sources=[response_source("Result", _mqtt("actions", "Start", "output", "Result"))],
-        response_transformation=RESPONSE_LUA,
-        response_sinks=[response_sink("LastResult", aimc_ref("{aas_id}/submodels/Variables", "LastResult"))],
+        Sources=[
+            SourcesItem(
+                SourceId="Start",
+                Source=aimc_ref("{aas_id}/submodels/ControlComponentInstance", "Skills", "Start", "operation"),
+            )
+        ],
+        Sinks=[SinksItem(SinkId="Start", Sink=_mqtt("actions", "Start"))],
+        Transformation="function aimc_main(sources) return { Start = sources.Start } end",
+        ResponseSources=[DmpResponseSource(SourceId="Result", Source=_mqtt("actions", "Start", "output", "Result"))],
+        ResponseTransformation=RESPONSE_LUA,
+        ResponseSinks=[
+            DmpResponseSink(SinkId="LastResult", Sink=aimc_ref("{aas_id}/submodels/Variables", "LastResult"))
+        ],
+        DefaultPollingInterval="0.0",
     )
 
 

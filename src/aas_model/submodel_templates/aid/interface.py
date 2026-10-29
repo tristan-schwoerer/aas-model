@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Optional
 
 from aas_pydantic import Key, ModelReference, ReferenceElement
 from aas_pydantic.submodel_templates.asset_interfaces_description import (
-    Base, ContentType, ContentType_for_content_type_2, EndpointMetadata, Scheme, nosec_sc, security_t,
+    Base, ContentType, EndpointMetadata, Scheme, nosec_sc, security_t,
     securityDefinitions, securityDefinitions_t,
 )
 
@@ -17,7 +17,7 @@ class DmpEndpointMetadata(EndpointMetadata):
     ``securityDefinitions``, filled with ``nosec_sc`` when nothing is selected
     (:func:`select_nosec`)."""
     base: Optional[Base] = Base()
-    contentType: Optional[Union[ContentType, ContentType_for_content_type_2]] = ContentType()
+    contentType: Optional[ContentType] = ContentType()
     security: security_t = security_t()
     securityDefinitions: securityDefinitions_t = securityDefinitions()
 
@@ -45,4 +45,5 @@ def select_nosec(metadata: EndpointMetadata, aid_id: str, interface: str) -> Non
         return
     if metadata.securityDefinitions.nosec_sc is None:
         metadata.securityDefinitions.nosec_sc = nosec_sc(scheme=Scheme(value="nosec"))
-    metadata.security.value = [ReferenceElement(value=nosec_reference(aid_id, interface))]
+    item = getattr(type(metadata.security), "item_type", ReferenceElement)
+    metadata.security.value = [item(value=nosec_reference(aid_id, interface))]

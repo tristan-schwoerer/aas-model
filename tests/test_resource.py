@@ -10,7 +10,8 @@ from pydantic import ValidationError
 
 from aas_model import Resource, ResourceTypeAAS, build_from_model, inject_ids
 from aas_model.constants import BASE_URL
-from aas_model.resource_template import Position, MqttOperationalStation as Station
+from aas_model.submodel_templates.parameters import Position
+from aas_model.resource_template import MqttOperationalStation as Station
 from aas_model.resource_instances.stopperingModule import syntegon_stoppering
 from aas_model.submodel_templates.control_component_instance import ExtendedSkill, SkillOperation
 from aas_model.submodel_templates.variables import VariableProp
@@ -62,7 +63,7 @@ def test_resource_instance_package_exports_the_module_factory():
     assert package_factory is syntegon_stoppering
 
 
-def test_resource_defaults_are_independent_and_have_authored_invocation_urls():
+def test_resource_defaults_are_independent_and_their_invocation_urls_resolve_when_built():
     first = Station(id_short="First")
     second = Station(id_short="Second")
     first.variables.variable["PackMLState"].value = "IDLE"
@@ -71,6 +72,8 @@ def test_resource_defaults_are_independent_and_have_authored_invocation_urls():
     assert second.variables.variable["PackMLState"].value == ""
     assert second.parameters.parameter["Location"].x.parameter.value == 480.0
     for resource in (first, second):
+        resource = resource.model_copy(deep=True)
+        inject_ids(resource)
         for name, skill in resource.control_component_instance.Skills.Skill.items():
             invocation = next(q for q in skill.operation.qualifiers if q.type_ == "invocationDelegation")
             assert invocation.value == "http://dmp:8080" + operation_path(

@@ -4,11 +4,11 @@ Source: Time Series Data/1/1/2/IDTA 02008-1-1-2_Template_TimeSeriesData_forAASMe
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, List, Dict, Optional, Union, TypeAlias
+from typing import ClassVar, Dict, Optional, TypeAlias
 from aas_pydantic import (
-    Blob, File, MultiLanguageProperty, Property, Submodel, SubmodelElement, SubmodelElementCollection, SubmodelElementList,
+    Blob, File, MultiLanguageProperty, Property, Submodel, SubmodelElementCollection,
 )
-from pydantic import Field
+from pydantic import Field as _Field
 from aas_pydantic.aas_model import AasIdString
 
 class Name(MultiLanguageProperty):
@@ -42,7 +42,7 @@ class SampleAccelerationZ(Property):
 class Record(SubmodelElementCollection):
     id_short: AasIdString = "Record"
     semantic_id: str = "https://admin-shell.io/idta/TimeSeries/Record/1/1"
-    Time: Dict[str, Time_t] = Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 1})
+    Time: Dict[str, Time_t] = _Field(default_factory=dict, json_schema_extra={"idta_min_cardinality": 1, "idta_allowed_id_short": "Time(\\d{2,3})?"})
     sampleAccelerationX: Optional[SampleAccelerationX] = None
     sampleAccelerationY: Optional[SampleAccelerationY] = None
     sampleAccelerationZ: Optional[SampleAccelerationZ] = None
@@ -125,8 +125,8 @@ class ExternalSegment(SubmodelElementCollection):
     SamplingRate: Optional[SamplingRate_t] = None
     State: Optional[State_t] = None
     LastUpdate: Optional[LastUpdate_t] = None
-    File: Optional[Union[File_time_series, File_base]] = None
-    Blob: Optional[Union[Blob_time_series, Blob_base]] = None
+    File: Optional[File_time_series] = None
+    Blob: Optional[Blob_time_series] = None
 
 class Endpoint(Property):
     id_short: AasIdString = "Endpoint"
@@ -184,7 +184,7 @@ class Segments(SubmodelElementCollection):
 class TimeSeries(Submodel):
     id_short: AasIdString = "TimeSeries"
     semantic_id: str = "https://admin-shell.io/idta/TimeSeries/1/1"
-    description: str = "Enth\u00e4lt Zeitreihendaten und Referenzen auf Zeitreihendaten, um diese entlang des Asset Lebenszyklus aufzufinden und semantisch zu beschreiben."
+    description: str = "Contains time series data and references to time series data to discover and semantically describe them along the asset lifecycle."
     VERSION: ClassVar[str] = "1"
     REVISION: ClassVar[str] = "1"
     Metadata: Metadata_t
@@ -230,8 +230,6 @@ InternalSegment_t: TypeAlias = InternalSegment
 Metadata_t: TypeAlias = Metadata
 # alias so field ``Segments_t`` can name a class of the same id_short
 Segments_t: TypeAlias = Segments
-Blob_base: TypeAlias = Blob
-File_base: TypeAlias = File
 # ── Resolve forward references (Pydantic circular refs) ──
 Name.model_rebuild()
 Description.model_rebuild()

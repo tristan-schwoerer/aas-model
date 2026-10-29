@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import ClassVar, Dict, List, Optional
 
 from aas_pydantic import (
-    SubmodelElementCollection,
+    Key, ModelReference, SubmodelElementCollection,
     Property, ReferenceElement, Operation, RelationshipElement, Qualifier,
 )
 
@@ -29,11 +29,10 @@ from aas_pydantic.submodel_templates.control_component_instance import (
     Disabled, Modes, Parameters, Errors, Uses,
     Disabled_t, Modes_t, Parameters_t, Errors_t, Uses_t,
     Endpoints as _BaseEndpoints,
+    ControlComponentInstance, Type_instance,
 )
 
-from aas_model.constants import (
-    BASE_URL, CSSX
-)
+from aas_model.constants import BASE_URL, CONTROL_COMPONENT_TYPE_SUBMODEL_ID, CSSX, INVOCATION_URL_TEMPLATE
 
 
 EXECUTION_MODEL = f"{BASE_URL}/ExectionModel"
@@ -105,6 +104,14 @@ class OptionalVariable(Qualifier):
     semantic_id: str = OPERATION_VARIABLE_OPTIONAL
 
 
+class InvocationDelegation(Qualifier):
+    """The URL BaSyx delegates an Operation's invocation to: the DMP's AAS API invoke path of the Operation,
+    filled from the template when the AAS is built (``invocation_authoring.resolve_invocation_addresses``)."""
+    type_: str = "invocationDelegation"
+    value: str = INVOCATION_URL_TEMPLATE
+    kind: str = "ConceptQualifier"
+
+
 class SkillOperation(Operation):
     """The skill's AAS Operation — the executable entry point for clients.
 
@@ -125,6 +132,7 @@ class SkillOperation(Operation):
     """
     semantic_id: str = SKILL_OPERATION
     description: str = "Operation to invoke this skill (delegated via operation delegation)."
+    qualifiers: List[Qualifier] = [InvocationDelegation()]
 
 
 class SkillInterfaceRelationship(RelationshipElement):
@@ -337,3 +345,15 @@ Effects.model_rebuild()
 ExecutionModel.model_rebuild()
 ExtendedSkill.model_rebuild()
 ExtendedSkills.model_rebuild()
+
+
+class ResourceControlComponentInstance(ControlComponentInstance):
+    """CCI variant that uses ExtendedSkills + the per-skill endpoint
+    relationships and default-constructs its mandatory children."""
+    Endpoints: ResourceEndpoints = ResourceEndpoints()
+    Skills: ExtendedSkills = ExtendedSkills()
+    Type: Type_instance = Type_instance(
+        value=ModelReference(
+            key=(Key(type_="Submodel", value=CONTROL_COMPONENT_TYPE_SUBMODEL_ID),)
+        )
+    )

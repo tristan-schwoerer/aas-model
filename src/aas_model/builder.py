@@ -6,7 +6,7 @@ from basyx.aas.model import DictIdentifiableStore, Identifiable
 
 from aas_pydantic import convert_model_to_aas
 
-from aas_model.resource_template.asset import Resource
+from aas_model.resource_template.resources import Resource
 from aas_model.id_injector import inject_ids
 
 

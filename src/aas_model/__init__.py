@@ -1,28 +1,20 @@
-"""aas_model — the shared AAS data-model package (ADR-016).
+"""aas_model — the shared AAS data model (ADR-016) of the lab's resources.
 
-Single source of truth for the whole AAS data model, used by BOTH consumers:
+Resources are authored as pydantic models and built into BaSyx AAS objects; the registration service restores
+an exported Resource from JSON and builds it the same way.
 
-* the **registration service** authors/instantiates AAS through it
-  (``aas_model.builder`` / ``aas_model.resource_template`` …), and
-* the **aas-camel-dmp management node** parses AAS JSON back into the same
-  models through it (``aas_model._serde``).
-
-It bundles the model base framework + generated IDTA templates (vendored
-``aas_pydantic``), the project-specific submodel templates
-(``aas_model.submodel_templates``), the resource/instantiation templates
-(``aas_model.resource_template``), concrete resource definitions
-(``aas_model.resource_instances``), the build/schema helpers (``builder``,
-``id_injector``, ``json_schema_aid``, ``schema_parser``) and the parse bridge
-(``_serde``).
+* ``aas_pydantic`` (vendored): the model base framework and the generated IDTA templates.
+* ``aas_model.submodel_templates``: our extensions of those templates and the project's own submodels.
+* ``aas_model.resource_template``: the lab's resource types, the operational contract and the references.
+* ``aas_model.resource_instances``: the concrete resources of the lab.
+* ``builder.build_from_model``: a Resource into a BaSyx store; ``id_injector`` gives it its ids on the way and
+  ``invocation_authoring`` its Operations' invocation addresses.
+* ``json_schema_aid``: JSON Schemas into AID data schemas, and back.
 """
 
-from aas_model import _serde  # noqa: F401  (public parse API)
 from aas_model.constants import *  # noqa: F401,F403
 from aas_model import builder  # noqa: F401
 from aas_model.builder import build_from_model  # noqa: F401
 from aas_model.id_injector import inject_ids  # noqa: F401
-from aas_model.resource_template import (  # noqa: F401
-    Resource,
-    ResourceTypeAAS,
-)
+from aas_model.resource_template import Resource, ResourceTypeAAS  # noqa: F401
 from aas_model.submodel_templates import *  # noqa: F401,F403

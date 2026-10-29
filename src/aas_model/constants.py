@@ -33,6 +33,22 @@ INVOCATION_URL_TEMPLATE = f"{INVOCATION_ORIGIN}{{operation_path}}"
 
 CSSX = "http://www.w3id.org/aau-ra/cssx"
 
+# The concepts of an operational device's state: its PackML state and its occupation (the process queue).
+STATE_OPERATIONAL = "https://w3id.org/2026/apex/semantic/state/operational"
+STATE_OCCUPIED = "https://w3id.org/2026/apex/semantic/state/occupied"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Submodel ids
+# ═══════════════════════════════════════════════════════════════════════════════
+# The id injector gives each submodel of a resource the id ``{aas_id}/submodels/<idShort>``; references into a
+# resource's own submodels are authored against these and resolved with it.
+
+AID_SUBMODEL_ID = "{aas_id}/submodels/AssetInterfacesDescription"
+CCI_SUBMODEL_ID = "{aas_id}/submodels/ControlComponentInstance"
+CONTROL_COMPONENT_TYPE_SUBMODEL_ID = "{aas_id}/submodels/ControlComponentType"
+VARIABLES_SUBMODEL_ID = "{aas_id}/submodels/Variables"
+CAPABILITIES_SUBMODEL_ID = "{aas_id}/submodels/CapabilityDescription"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # AID extension (docs/aid-extension.md) — WoT TD terms AID 1.2 does not carry.
 # IRIs are those of the TD 1.1 JSON-LD context (td:, hctl:, jsonschema:).

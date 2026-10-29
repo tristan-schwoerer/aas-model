@@ -1,0 +1,840 @@
+{
+  "assetAdministrationShells": [
+    {
+      "idShort": "DmpAimcAAS",
+      "modelType": "AssetAdministrationShell",
+      "id": "https://smartproductionlab.aau.dk/templates/aas/DmpAimc/2/0",
+      "assetInformation": {
+        "assetKind": "Type",
+        "globalAssetId": "https://smartproductionlab.aau.dk/templates/asset/DmpAimc/2/0"
+      },
+      "submodels": [
+        {
+          "type": "ModelReference",
+          "keys": [
+            {
+              "type": "Submodel",
+              "value": "https://smartproductionlab.aau.dk/templates/submodel/DmpAimc/2/0"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "submodels": [
+    {
+      "idShort": "AssetInterfacesMappingConfiguration",
+      "displayName": [
+        {
+          "language": "en",
+          "text": "Asset interfaces mapping configuration"
+        }
+      ],
+      "description": [
+        {
+          "language": "en",
+          "text": "The AIMC 2.0 is used to describe how data is mapped from asset to AAS or from AAS to AAS."
+        }
+      ],
+      "modelType": "Submodel",
+      "id": "https://smartproductionlab.aau.dk/templates/submodel/DmpAimc/2/0",
+      "administration": {
+        "version": "2",
+        "revision": "0"
+      },
+      "semanticId": {
+        "type": "ExternalReference",
+        "keys": [
+          {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/Submodel"
+          }
+        ]
+      },
+      "kind": "Template",
+      "submodelElements": [
+        {
+          "idShort": "MappingConfigurations",
+          "displayName": [
+            {
+              "language": "en",
+              "text": "Mapping configurations"
+            }
+          ],
+          "description": [
+            {
+              "language": "en",
+              "text": "List of MappingConfigurations that each map and transform data from their sources to their sinks."
+            }
+          ],
+          "modelType": "SubmodelElementList",
+          "semanticId": {
+            "type": "ExternalReference",
+            "keys": [
+              {
+                "type": "GlobalReference",
+                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/1/0/MappingConfigurations"
+              }
+            ]
+          },
+          "qualifiers": [
+            {
+              "value": "ZeroToOne",
+              "kind": "TemplateQualifier",
+              "valueType": "xs:string",
+              "type": "SMT/Cardinality"
+            }
+          ],
+          "orderRelevant": false,
+          "typeValueListElement": "SubmodelElementCollection",
+          "semanticIdListElement": {
+            "type": "ExternalReference",
+            "keys": [
+              {
+                "type": "GlobalReference",
+                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
+              }
+            ]
+          },
+          "value": [
+            {
+              "displayName": [
+                {
+                  "language": "en",
+                  "text": "Mapping configuration"
+                }
+              ],
+              "description": [
+                {
+                  "language": "en",
+                  "text": "A MappingConfiguration defines one logical unit of sources (inputs) and sinks (outputs) that are in relation to one another. The relation can be expressed via a transformation."
+                }
+              ],
+              "modelType": "SubmodelElementCollection",
+              "semanticId": {
+                "type": "ExternalReference",
+                "keys": [
+                  {
+                    "type": "GlobalReference",
+                    "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
+                  }
+                ]
+              },
+              "qualifiers": [
+                {
+                  "value": "ZeroToMany",
+                  "kind": "TemplateQualifier",
+                  "valueType": "xs:string",
+                  "type": "SMT/Cardinality"
+                }
+              ],
+              "value": [
+                {
+                  "idShort": "DefaultPollingInterval",
+                  "displayName": [
+                    {
+                      "language": "en",
+                      "text": "Default polling interval"
+                    }
+                  ],
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "The DefaultPollingInterval defines the default time interval in seconds for fetching new data from the synchronous data sources defined in this MappingConfiguration. It must be greater than zero for synchronous protocols (e.g. HTTP) that need polling and is ignored for asynchronous protocols (e.g. MQTT)."
+                    }
+                  ],
+                  "modelType": "Property",
+                  "semanticId": {
+                    "type": "ExternalReference",
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/DefaultPollingInterval"
+                      }
+                    ]
+                  },
+                  "qualifiers": [
+                    {
+                      "value": "ZeroToOne",
+                      "kind": "TemplateQualifier",
+                      "valueType": "xs:string",
+                      "type": "SMT/Cardinality"
+                    }
+                  ],
+                  "valueType": "xs:double"
+                },
+                {
+                  "idShort": "Transformation",
+                  "displayName": [
+                    {
+                      "language": "en",
+                      "text": "Transformation"
+                    }
+                  ],
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "The transformation allows for transforming incoming data before writing it to the sinks. The transformation must contain an \"aimc_main(sources)\" entrypoint function in Lua."
+                    }
+                  ],
+                  "modelType": "Blob",
+                  "semanticId": {
+                    "type": "ExternalReference",
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Transformation"
+                      }
+                    ]
+                  },
+                  "qualifiers": [
+                    {
+                      "value": "ZeroToOne",
+                      "kind": "TemplateQualifier",
+                      "valueType": "xs:string",
+                      "type": "SMT/Cardinality"
+                    }
+                  ],
+                  "contentType": "text/plain"
+                },
+                {
+                  "idShort": "Sources",
+                  "displayName": [
+                    {
+                      "language": "en",
+                      "text": "Sources"
+                    }
+                  ],
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "This list includes all data sources that are used in this MappingConfiguration."
+                    }
+                  ],
+                  "modelType": "SubmodelElementList",
+                  "semanticId": {
+                    "type": "ExternalReference",
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sources"
+                      }
+                    ]
+                  },
+                  "qualifiers": [
+                    {
+                      "value": "One",
+                      "kind": "TemplateQualifier",
+                      "valueType": "xs:string",
+                      "type": "SMT/Cardinality"
+                    }
+                  ],
+                  "orderRelevant": false,
+                  "typeValueListElement": "SubmodelElementCollection",
+                  "semanticIdListElement": {
+                    "type": "ExternalReference",
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
+                      }
+                    ]
+                  },
+                  "value": [
+                    {
+                      "modelType": "SubmodelElementCollection",
+                      "qualifiers": [
+                        {
+                          "value": "OneToMany",
+                          "kind": "TemplateQualifier",
+                          "valueType": "xs:string",
+                          "type": "SMT/Cardinality"
+                        }
+                      ],
+                      "value": [
+                        {
+                          "idShort": "Source",
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Source"
+                            }
+                          ],
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "This holds a reference to the respective SubmodelElement used as data source. A data source can be any SubmodelElement including those defined in the InteractionMetadata of AID Submodels for fetching live-data from assets."
+                            }
+                          ],
+                          "modelType": "ReferenceElement",
+                          "semanticId": {
+                            "type": "ExternalReference",
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source/Source"
+                              }
+                            ]
+                          },
+                          "qualifiers": [
+                            {
+                              "value": "One",
+                              "kind": "TemplateQualifier",
+                              "valueType": "xs:string",
+                              "type": "SMT/Cardinality"
+                            }
+                          ]
+                        },
+                        {
+                          "idShort": "PollingInterval",
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Polling interval"
+                            }
+                          ],
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "The PollingInterval defines the time interval in seconds for fetching new data from the given synchronous data source. It must be greater than zero for synchronous protocols (e.g. HTTP) that need polling and is ignored for asynchronous protocols (e.g. MQTT). It overwrites the DefaultPollingInterval of the respective MappingConfiguration of this source."
+                            }
+                          ],
+                          "modelType": "Property",
+                          "semanticId": {
+                            "type": "ExternalReference",
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source/PollingInterval"
+                              }
+                            ]
+                          },
+                          "qualifiers": [
+                            {
+                              "value": "ZeroToOne",
+                              "kind": "TemplateQualifier",
+                              "valueType": "xs:string",
+                              "type": "SMT/Cardinality"
+                            }
+                          ],
+                          "valueType": "xs:double"
+                        },
+                        {
+                          "idShort": "SourceId",
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Source ID"
+                            }
+                          ],
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "This is a unique and non-empty identifier that facilitates data access in the Lua transformation or establishes a relationship to a corresponding sink when no transformation is given. It must only be unique with respect to the Sources-list of the parent MappingConfiguration and not globally."
+                            }
+                          ],
+                          "modelType": "Property",
+                          "semanticId": {
+                            "type": "ExternalReference",
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source/SourceId"
+                              }
+                            ]
+                          },
+                          "qualifiers": [
+                            {
+                              "value": "One",
+                              "kind": "TemplateQualifier",
+                              "valueType": "xs:string",
+                              "type": "SMT/Cardinality"
+                            }
+                          ],
+                          "valueType": "xs:string"
+                        },
+                        {
+                          "idShort": "Evaluation",
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "How the Source contributes to its mapping's evaluations."
+                            }
+                          ],
+                          "modelType": "SubmodelElementCollection",
+                          "semanticId": {
+                            "type": "ExternalReference",
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://smartproductionlab.aau.dk/aimc/Evaluation/1/0"
+                              }
+                            ]
+                          },
+                          "qualifiers": [
+                            {
+                              "value": "ZeroToOne",
+                              "kind": "TemplateQualifier",
+                              "valueType": "xs:string",
+                              "type": "SMT/Cardinality"
+                            }
+                          ],
+                          "value": [
+                            {
+                              "idShort": "Mode",
+                              "description": [
+                                {
+                                  "language": "en",
+                                  "text": "OnUpdate: every new value evaluates the mapping. OnChange: only a value that differs from the previous one. Cached: never; the latest observed or polled value is used. ReadAtEvaluation: never; the source is read once per evaluation."
+                                }
+                              ],
+                              "modelType": "Property",
+                              "semanticId": {
+                                "type": "ExternalReference",
+                                "keys": [
+                                  {
+                                    "type": "GlobalReference",
+                                    "value": "https://smartproductionlab.aau.dk/aimc/Evaluation/Mode/1/0"
+                                  }
+                                ]
+                              },
+                              "qualifiers": [
+                                {
+                                  "value": "One",
+                                  "kind": "TemplateQualifier",
+                                  "valueType": "xs:string",
+                                  "type": "SMT/Cardinality"
+                                }
+                              ],
+                              "valueType": "xs:string"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "idShort": "Sinks",
+                  "displayName": [
+                    {
+                      "language": "en",
+                      "text": "Sinks"
+                    }
+                  ],
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "This list includes all data sinks that are used in this MappingConfiguration."
+                    }
+                  ],
+                  "modelType": "SubmodelElementList",
+                  "semanticId": {
+                    "type": "ExternalReference",
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sinks"
+                      }
+                    ]
+                  },
+                  "qualifiers": [
+                    {
+                      "value": "One",
+                      "kind": "TemplateQualifier",
+                      "valueType": "xs:string",
+                      "type": "SMT/Cardinality"
+                    }
+                  ],
+                  "orderRelevant": true,
+                  "typeValueListElement": "SubmodelElementCollection",
+                  "semanticIdListElement": {
+                    "type": "ExternalReference",
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
+                      }
+                    ]
+                  },
+                  "value": [
+                    {
+                      "modelType": "SubmodelElementCollection",
+                      "qualifiers": [
+                        {
+                          "value": "OneToMany",
+                          "kind": "TemplateQualifier",
+                          "valueType": "xs:string",
+                          "type": "SMT/Cardinality"
+                        }
+                      ],
+                      "value": [
+                        {
+                          "idShort": "Sink",
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Sink"
+                            }
+                          ],
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "This holds a reference to the respective SubmodelElement used as data sink for live-data."
+                            }
+                          ],
+                          "modelType": "ReferenceElement",
+                          "semanticId": {
+                            "type": "ExternalReference",
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink/Sink"
+                              }
+                            ]
+                          },
+                          "qualifiers": [
+                            {
+                              "value": "One",
+                              "kind": "TemplateQualifier",
+                              "valueType": "xs:string",
+                              "type": "SMT/Cardinality"
+                            }
+                          ]
+                        },
+                        {
+                          "idShort": "SinkId",
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Sink ID"
+                            }
+                          ],
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "This is a unique and non-empty identifier that facilitates data writing in the Lua transformation or establishes a relationship to a corresponding source when no transformation is given. It must only be unique with respect to the Sinks-list of the containing MappingConfiguration and not globally."
+                            }
+                          ],
+                          "modelType": "Property",
+                          "semanticId": {
+                            "type": "ExternalReference",
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink/SinkId"
+                              }
+                            ]
+                          },
+                          "qualifiers": [
+                            {
+                              "value": "One",
+                              "kind": "TemplateQualifier",
+                              "valueType": "xs:string",
+                              "type": "SMT/Cardinality"
+                            }
+                          ],
+                          "valueType": "xs:string"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "idShort": "ResponseTransformation",
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "The response-direction transformation of an operation mapping: the action's reply, projected by the response sources, is transformed into the response sink values; the response sink selecting the Operation receives the caller's outputs. Must contain an \"aimc_main(sources)\" entrypoint function in Lua. Authored together with the response sources and sinks; without them the Operation answers with no outputs."
+                    }
+                  ],
+                  "modelType": "Blob",
+                  "semanticId": {
+                    "type": "ExternalReference",
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://smartproductionlab.aau.dk/aimc/ResponseTransformation/1/0"
+                      }
+                    ]
+                  },
+                  "qualifiers": [
+                    {
+                      "value": "ZeroToOne",
+                      "kind": "TemplateQualifier",
+                      "valueType": "xs:string",
+                      "type": "SMT/Cardinality"
+                    }
+                  ],
+                  "contentType": "text/plain"
+                },
+                {
+                  "idShort": "ResponseSources",
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "Response sources selected for the correlated response transformation."
+                    }
+                  ],
+                  "modelType": "SubmodelElementList",
+                  "semanticId": {
+                    "type": "ExternalReference",
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://smartproductionlab.aau.dk/aimc/ResponseSources/1/0"
+                      }
+                    ]
+                  },
+                  "qualifiers": [
+                    {
+                      "value": "ZeroToOne",
+                      "kind": "TemplateQualifier",
+                      "valueType": "xs:string",
+                      "type": "SMT/Cardinality"
+                    }
+                  ],
+                  "orderRelevant": true,
+                  "typeValueListElement": "SubmodelElementCollection",
+                  "value": [
+                    {
+                      "description": [
+                        {
+                          "language": "en",
+                          "text": "A response source: the output of the invoked action, or a member of it."
+                        }
+                      ],
+                      "modelType": "SubmodelElementCollection",
+                      "semanticId": {
+                        "type": "ExternalReference",
+                        "keys": [
+                          {
+                            "type": "GlobalReference",
+                            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSource/1/0"
+                          }
+                        ]
+                      },
+                      "qualifiers": [
+                        {
+                          "value": "One",
+                          "kind": "TemplateQualifier",
+                          "valueType": "xs:string",
+                          "type": "SMT/Cardinality"
+                        }
+                      ],
+                      "value": [
+                        {
+                          "idShort": "Source",
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "Reference to a SubmodelElement used as a correlated response source."
+                            }
+                          ],
+                          "modelType": "ReferenceElement",
+                          "semanticId": {
+                            "type": "ExternalReference",
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://smartproductionlab.aau.dk/aimc/ResponseSource/Source/1/0"
+                              }
+                            ]
+                          },
+                          "qualifiers": [
+                            {
+                              "value": "One",
+                              "kind": "TemplateQualifier",
+                              "valueType": "xs:string",
+                              "type": "SMT/Cardinality"
+                            }
+                          ]
+                        },
+                        {
+                          "idShort": "SourceId",
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Source ID"
+                            }
+                          ],
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "This is a unique and non-empty identifier that facilitates data access in the Lua transformation or establishes a relationship to a corresponding sink when no transformation is given. It must only be unique with respect to the Sources-list of the parent MappingConfiguration and not globally."
+                            }
+                          ],
+                          "modelType": "Property",
+                          "semanticId": {
+                            "type": "ExternalReference",
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://smartproductionlab.aau.dk/aimc/ResponseSource/SourceId/1/0"
+                              }
+                            ]
+                          },
+                          "qualifiers": [
+                            {
+                              "value": "One",
+                              "kind": "TemplateQualifier",
+                              "valueType": "xs:string",
+                              "type": "SMT/Cardinality"
+                            }
+                          ],
+                          "valueType": "xs:string"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "idShort": "ResponseSinks",
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "Response sinks written from the correlated response transformation."
+                    }
+                  ],
+                  "modelType": "SubmodelElementList",
+                  "semanticId": {
+                    "type": "ExternalReference",
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://smartproductionlab.aau.dk/aimc/ResponseSinks/1/0"
+                      }
+                    ]
+                  },
+                  "qualifiers": [
+                    {
+                      "value": "ZeroToOne",
+                      "kind": "TemplateQualifier",
+                      "valueType": "xs:string",
+                      "type": "SMT/Cardinality"
+                    }
+                  ],
+                  "orderRelevant": true,
+                  "typeValueListElement": "SubmodelElementCollection",
+                  "value": [
+                    {
+                      "description": [
+                        {
+                          "language": "en",
+                          "text": "A correlated response sink reference and its transformation identifier."
+                        }
+                      ],
+                      "modelType": "SubmodelElementCollection",
+                      "semanticId": {
+                        "type": "ExternalReference",
+                        "keys": [
+                          {
+                            "type": "GlobalReference",
+                            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/1/0"
+                          }
+                        ]
+                      },
+                      "qualifiers": [
+                        {
+                          "value": "One",
+                          "kind": "TemplateQualifier",
+                          "valueType": "xs:string",
+                          "type": "SMT/Cardinality"
+                        }
+                      ],
+                      "value": [
+                        {
+                          "idShort": "Sink",
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "Reference to a SubmodelElement used as a correlated response sink."
+                            }
+                          ],
+                          "modelType": "ReferenceElement",
+                          "semanticId": {
+                            "type": "ExternalReference",
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/Sink/1/0"
+                              }
+                            ]
+                          },
+                          "qualifiers": [
+                            {
+                              "value": "One",
+                              "kind": "TemplateQualifier",
+                              "valueType": "xs:string",
+                              "type": "SMT/Cardinality"
+                            }
+                          ]
+                        },
+                        {
+                          "idShort": "SinkId",
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Sink ID"
+                            }
+                          ],
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "This is a unique and non-empty identifier that facilitates data writing in the Lua transformation or establishes a relationship to a corresponding source when no transformation is given. It must only be unique with respect to the Sinks-list of the containing MappingConfiguration and not globally."
+                            }
+                          ],
+                          "modelType": "Property",
+                          "semanticId": {
+                            "type": "ExternalReference",
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/SinkId/1/0"
+                              }
+                            ]
+                          },
+                          "qualifiers": [
+                            {
+                              "value": "One",
+                              "kind": "TemplateQualifier",
+                              "valueType": "xs:string",
+                              "type": "SMT/Cardinality"
+                            }
+                          ],
+                          "valueType": "xs:string"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "idShort": "InvocationTimeout",
+                  "modelType": "Property",
+                  "semanticId": {
+                    "type": "ExternalReference",
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://smartproductionlab.aau.dk/aimc/InvocationTimeout/1/0"
+                      }
+                    ]
+                  },
+                  "qualifiers": [
+                    {
+                      "value": "ZeroToOne",
+                      "kind": "TemplateQualifier",
+                      "valueType": "xs:string",
+                      "type": "SMT/Cardinality"
+                    }
+                  ],
+                  "valueType": "xs:duration"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -45,7 +45,7 @@ from aas_pydantic import (
 )
 from aas_pydantic.aas_model import AasIdString
 
-from aas_model.constants import BASE_URL
+from aas_model.constants import AID_SUBMODEL_ID, BASE_URL
 from aas_model.submodel_templates.time_series import TimeSeriesCollection
 
 SM_VARIABLES = f"{BASE_URL}/submodels/Variables/1/0"
@@ -57,7 +57,6 @@ VAR_STATE = f"{BASE_URL}/variables/State/1/0"
 VAR_MEASUREMENTS = f"{BASE_URL}/variables/Measurements/1/0"
 VAR_LOG = f"{BASE_URL}/variables/Log/1/0"
 
-AID_SUBMODEL_REF = "{aas_id}/submodels/AssetInterfacesDescription"
 
 
 class VariableProp(Property):
@@ -75,7 +74,7 @@ class InterfaceRef(ReferenceElement):
     """Reference to the AID interface that provides live data for a variable."""
     semantic_id: str = VAR_INTERFACE_REF
     description: str = "Reference to the AID interface that provides live data for this variable."
-    value: ModelReference = ModelReference(key=(Key(type_="Submodel", value=AID_SUBMODEL_REF),))
+    value: ModelReference = ModelReference(key=(Key(type_="Submodel", value=AID_SUBMODEL_ID),))
 
 
 class VariableItem(SubmodelElementCollection):

@@ -14,11 +14,13 @@ their list behavior. IDTA example children define the class metadata, including
 semantic_id, description, value_type, and supplemental semantic IDs.
 """
 
+import io
 import json
 import keyword
 import os
 import re
 import sys
+import tokenize
 from dataclasses import dataclass
 
 # modelType → Python type name
@@ -35,11 +37,13 @@ ELEMENT_MAP = {
 }
 
 
+# IDTA placeholder suffixes (``Mode__00__``, ``Doc{00}``): a repeatable instance whose idShort the author picks.
+_PLACEHOLDER = re.compile(r"(__\d+__|\{\d+\})$")
+
+
 def safe_name(name: str) -> str:
-    # IDTA placeholders like ``Mode__00__`` mean "a repeatable instance whose
-    # id_short the user picks" — strip the ``__NN__`` suffix so class and field
-    # names are the clean base name (``Mode`` → field ``mode``).
-    name = re.sub(r"__\d+__$", "", name or "")
+    # Strip the placeholder suffix so class and field names are the clean base name.
+    name = _PLACEHOLDER.sub("", name or "")
     return re.sub(r"[^0-9a-zA-Z_]", "_", name)
 
 
@@ -52,7 +56,7 @@ def id_short_default(el: dict) -> list:
     missing idShorts (SML items) get none, since the instance name is chosen
     by the author (a dict key or a list position)."""
     raw = el.get("idShort") or ""
-    if not _CONCRETE_ID_SHORT.fullmatch(raw) or re.search(r"__\d+__$", raw):
+    if not _CONCRETE_ID_SHORT.fullmatch(raw) or _PLACEHOLDER.search(raw):
         return []
     return [f"    id_short: AasIdString = {json.dumps(raw)}"]
 
@@ -68,7 +72,6 @@ def field_name(name: str) -> str:
     IDTA ``__NN__`` placeholder suffixes are stripped; invalid characters are
     replaced with underscores and Python keywords receive a trailing underscore.
     """
-    name = re.sub(r"__\d+__$", "", name or "")
     s = safe_name(name)
     if s and s[0].isdigit():
         s = f"_{s}"
@@ -90,6 +93,19 @@ TEMPLATES = (
     "Asset Interfaces Description/1/2/IDTA 02017_Template_Asset Interfaces Description.json",
     "Time Series Data/1/1/2/IDTA 02008-1-1-2_Template_TimeSeriesData_forAASMetamodelV3.1.json",
 )
+
+
+# Children a template declares mandatory each although only one of them applies: they become optional, and
+# the container requires one of them (``IDTA_ONE_OF``, checked by ``validate_idta_cardinality``).
+# AID: an asset has at least one interface, of any protocol (every InterfaceTemplateFor* is OneToMany).
+# CapabilityDescription: a PropertyConstraintContainer holds the constraint its ConstraintType names.
+# A pattern's group names a variant (the AID's protocol): the elements below an alternative are defined per
+# variant, and where their definitions differ each variant gets its own subclass of a shared base
+# (``forms_MQTT(forms)``, see ``_variant_classes``).
+ALTERNATIVES = {
+    "AssetInterfacesDescription": re.compile(r"InterfaceTemplateFor(.+)"),
+    "PropertyConstraintContainer": re.compile(r"BasicConstraint|CustomConstraint|OCLConstraint|OperationConstraint"),
+}
 
 
 def to_camel(name: str) -> str:
@@ -118,6 +134,155 @@ def sid_namespace_suffix(base_name: str, sid: str) -> str:
     return snake(ns[-1]) if ns else ""
 
 
+# Metadata lines that describe an element rather than define it.
+_DESCRIPTIVE = ("    description:", "    display_name:")
+
+
+def _structural(meta) -> tuple:
+    return tuple(line for line in meta if not line.startswith(_DESCRIPTIVE))
+
+
+def _with_descriptions(meta: list, *others: list) -> list:
+    """``meta`` with the description and display name an other copy of the element has where it has none
+    (a template often describes an element in one place only)."""
+    merged = list(meta)
+    for other in others:
+        for line in other:
+            key = line.split(":")[0]
+            if line.startswith(_DESCRIPTIVE) and not any(m.split(":")[0] == key for m in merged):
+                merged.append(line)
+    return merged
+
+
+_ITEM_TYPE = "    item_type: ClassVar = "
+
+
+def _meta_refs(meta, mapping: dict) -> list:
+    """``meta`` with the class an SML's ``item_type`` names mapped (a provisional name to its final one)."""
+    return [_ITEM_TYPE + str(mapping.get(line[len(_ITEM_TYPE):], line[len(_ITEM_TYPE):]))
+            if line.startswith(_ITEM_TYPE) else line for line in meta]
+
+
+def _variant_classes(order: list, classes: dict) -> tuple[list, dict]:
+    """Resolve the variants of a class (``forms@MQTT``, ``forms@HTTP``, …) into final classes.
+
+    A variant is defined per alternative (an AID protocol). Variants whose definitions agree, also through their
+    children, are one class; descriptions alone do not set them apart. Where they differ, the class is a shared
+    base holding what all variants have in common, and each variant that adds to it a subclass named after its
+    alternative (``forms_MQTT(forms)``); a variant adding nothing is the base. Agreement is decided bottom-up by
+    refining a partition until it is stable, so a split child splits its parents.
+
+    Returns the classes to emit, ``(name, base or None, meta, fields)`` in definition order, and the final name
+    of every provisional one."""
+    group = {name: name.split("@")[0] for name in order}
+    ctx = {name: name.split("@")[1] if "@" in name else "" for name in order}
+
+    # Partition the provisional classes by structure, refined through their children until stable.
+    ident = {name: group[name] for name in order}
+    while True:
+        refined = {name: (group[name], tuple(_meta_refs(_structural(classes[name][0]), ident)), tuple(
+            (f.name, f.shape, f.required, f.aas_id_short, f.minimum, f.allowed_id_short, f.cardinality,
+             tuple(ident.get(t, t) for t in f.types)) for f in classes[name][1]))
+            for name in order}
+        if len(set(refined.values())) == len(set(ident.values())):
+            break
+        ident = refined
+    members = {}  # group → its distinct identities in definition order, each with its first provisional class
+    for name in order:
+        members.setdefault(group[name], {}).setdefault(ident[name], name)
+
+    def described(identity, final):
+        copies = [_meta_refs(classes[name][0], final) for name in order if ident[name] == identity]
+        return _with_descriptions(copies[0], *copies[1:])
+
+    # Name the variants; one adding nothing to its group's shared definition is the base.
+    def resolve(is_base):
+        final = {}
+        for base, variants in members.items():
+            for identity, first in variants.items():
+                own = len(variants) > 1 and identity not in is_base
+                if own and not ctx[first]:
+                    raise ValueError(f"{base}: a definition outside every alternative differs from one inside")
+                final.update({name: f"{base}_{ctx[first]}" if own else base
+                              for name in order if ident[name] == identity})
+        base_of = {final[name]: group[name] for name in order}
+
+        def mapped(fields):
+            return [FieldSpec(f.name, tuple(dict.fromkeys(final.get(t, t) for t in f.types)), f.shape,
+                              f.required, f.aas_id_short, f.minimum, f.allowed_id_short, f.cardinality)
+                    for f in fields]
+
+        emitted, found = [], set()
+        for base, variants in members.items():
+            definitions = [(identity, final[first], described(identity, final), mapped(classes[first][1]))
+                           for identity, first in variants.items()]
+            if len(definitions) == 1:
+                _, name, meta, fields = definitions[0]
+                emitted.append((name, None, meta, fields))
+                continue
+            # The shared base: the metadata and fields every variant has, a field whose type differs typed by
+            # its classes' own base (``forms``), or by the union of their types.
+            common_meta = [line for line in definitions[0][2] if all(line in meta for *_, meta, _ in definitions)]
+            # The base is described as the first variant describing it is; a variant describing it otherwise
+            # keeps its own.
+            for key in _DESCRIPTIVE:
+                values = [line for *_, meta, _ in definitions for line in meta if line.startswith(key)]
+                if values and values[0] not in common_meta:
+                    common_meta.append(values[0])
+            by_name = [{f.name: f for f in fields} for *_, fields in definitions]
+            common = []
+            for f in definitions[0][3]:
+                specs = [variant.get(f.name) for variant in by_name]
+                if any(spec is None for spec in specs):
+                    continue
+                if len({spec.shape for spec in specs}) > 1:
+                    raise ValueError(f"{base}.{f.name}: the variants hold it differently")
+                types = tuple(dict.fromkeys(base_of.get(t, t) for spec in specs for t in spec.types))
+                common.append(FieldSpec(f.name, types, f.shape, all(spec.required for spec in specs),
+                                        f.aas_id_short, f.minimum, f.allowed_id_short, f.cardinality))
+            emitted.append((base, None, common_meta, common))
+            shared = {f.name: f for f in common}
+            for identity, name, meta, fields in definitions:
+                own_fields = [f for f in fields if shared.get(f.name) != f]
+                own_meta = [line for line in meta if line not in common_meta]
+                if not own_fields and not _structural(own_meta):
+                    found.add(identity)
+                    if name == base:
+                        # Its descriptions are the base's.
+                        emitted[-1] = (base, None, _with_descriptions(common_meta, meta), common)
+                    continue
+                emitted.append((name, base, own_meta, own_fields))
+        return emitted, final, found
+
+    # First assume the variant most alternatives share is the base and keep it where that holds (a variant
+    # referring to itself, as a recursive schema does, adds nothing only once it is the base); then add the
+    # variants found to add nothing, until none is.
+    split = {base: variants for base, variants in members.items() if len(variants) > 1}
+    is_base = {max(variants, key=lambda identity: sum(ident[n] == identity for n in order))
+               for variants in split.values()}
+    while True:
+        emitted, final, found = resolve(is_base)
+        if is_base <= found:
+            break
+        is_base &= found
+    while True:
+        based = {group[next(n for n in order if ident[n] == identity)] for identity in is_base}
+        new = {identity for identity in found - is_base
+               if group[next(n for n in order if ident[n] == identity)] not in based}
+        if not new:
+            break
+        is_base |= new
+        emitted, final, found = resolve(is_base)
+
+    # In definition order: a class where its first copy is, a shared base where its group first is.
+    order_index = {}
+    for i, name in enumerate(order):
+        order_index.setdefault(group[name], i)
+        order_index.setdefault(final[name], i)
+    emitted.sort(key=lambda item: order_index[item[0]])
+    return emitted, final
+
+
 @dataclass(frozen=True)
 class FieldSpec:
     name: str
@@ -126,6 +291,8 @@ class FieldSpec:
     required: bool = False
     aas_id_short: str = ""
     minimum: int = 0
+    allowed_id_short: str = ""
+    cardinality: str = ""
 
     def render(self, aliases: set[str]) -> str:
         types = list(self.types)
@@ -145,14 +312,18 @@ class FieldSpec:
             extra["aas_id_short"] = self.aas_id_short
         if self.minimum:
             extra["idta_min_cardinality"] = self.minimum
+        if self.allowed_id_short:
+            extra["idta_allowed_id_short"] = self.allowed_id_short
+        if self.cardinality:
+            extra["idta_cardinality"] = self.cardinality
         if self.shape == "map":
-            default = (f"Field(default_factory=dict, json_schema_extra={json.dumps(extra)})"
+            default = (f"_Field(default_factory=dict, json_schema_extra={json.dumps(extra)})"
                        if extra else "{}")
         elif self.shape == "list":
             default = "[]"
         elif extra:
             args = "" if self.required else "default=None, "
-            default = f"Field({args}json_schema_extra={json.dumps(extra)})"
+            default = f"_Field({args}json_schema_extra={json.dumps(extra)})"
         elif self.required:
             default = None
         else:
@@ -197,8 +368,9 @@ def merge_fields(class_name: str, bodies: list, compatible=None) -> list[FieldSp
                 f"{', '.join(sorted(types))}"
             )
         if first.shape in ("map", "list"):
-            if any((spec.aas_id_short, spec.minimum) !=
-                   (first.aas_id_short, first.minimum) for spec in definitions[1:]):
+            if any((spec.aas_id_short, spec.minimum, spec.allowed_id_short, spec.cardinality) !=
+                   (first.aas_id_short, first.minimum, first.allowed_id_short, first.cardinality)
+                   for spec in definitions[1:]):
                 raise ValueError(
                     f"Incompatible repeatable defaults for {class_name}.{name}"
                 )
@@ -236,14 +408,21 @@ def extract_supplemental_semantic_ids(el: dict) -> list:
     return out
 
 
+def _lang_strings(value) -> list:
+    if isinstance(value, dict):  # older exports: {"texts": [...]}
+        value = value.get("texts")
+    return [t for t in (value or []) if isinstance(t, dict) and t.get("text")]
+
+
 def extract_description(el: dict) -> str:
-    d = el.get("description")
-    if isinstance(d, list):  # AAS JSON: [{"language": "en", "text": "..."}]
-        return d[0].get("text", "") if d else ""
-    if isinstance(d, dict):
-        texts = d.get("texts") or []
-        return texts[0].get("text", "") if texts else ""
-    return ""
+    """The English description, else the first one (AAS JSON: [{"language": "en", "text": "..."}])."""
+    texts = _lang_strings(el.get("description"))
+    english = [t for t in texts if (t.get("language") or "").lower().startswith("en")]
+    return (english or texts or [{}])[0].get("text", "")
+
+
+def extract_display_name(el: dict) -> dict:
+    return {t.get("language") or "en": t["text"] for t in _lang_strings(el.get("displayName"))}
 
 
 def extract_value_type(el: dict) -> str:
@@ -259,68 +438,59 @@ def metadata_lines(el: dict, *, include_empty_semantic_id: bool = True) -> list:
     desc = extract_description(el)
     if desc:
         lines.append(f'    description: str = {json.dumps(desc)}')
+    display_name = extract_display_name(el)
+    if display_name:
+        lines.append(f'    display_name: Optional[Dict[str, str]] = {json.dumps(display_name, ensure_ascii=False)}')
     supp = extract_supplemental_semantic_ids(el)
     if supp:
         lines.append(f'    supplemental_semantic_ids: List[str] = {json.dumps(supp)}')
     return lines
 
 
-def extract_cardinality(el: dict) -> str:
-    """Cardinality qualifier value (e.g. ``ZeroToMany``, ``ZeroToOne``, ``One``)
-    — how many instances of this element a container may hold.
-
-    Templates encode it under the standard qualifier ``type``
-    ``SMT/Cardinality``."""
-    for q in (el.get("qualifiers") or []):
-        if q.get("type") == "SMT/Cardinality":
-            return (q.get("value") or "").strip()
-    return ""
-
-
-# Cardinalities that allow more than one instance of an element → the
-# values model field becomes a dynamic ``Dict[str, Element]`` (name-keyed),
-# so MANY instances are possible — exactly like the pre-values-model dicts.
-_MULTI_CARDINALITY = {
-    "ZeroToMany", "OneToMany",  # standard SMT encodings
-    "TwoToMany", "Three",       # other >1 encodings in the wild
-    "Recursive",                # recursive structures allow unbounded nesting
+# SMT/Cardinality values → the minimum number of instances, and whether more than one is allowed (a dynamic
+# ``Dict[str, Element]`` map). A missing qualifier means ``One``.
+_CARDINALITIES = {
+    "One": (1, False), "ZeroToOne": (0, False),
+    "ZeroToMany": (0, True), "OneToMany": (1, True), "TwoToMany": (2, True),
+    "Recursive": (0, True),  # a recursive structure: unbounded nesting
 }
 
 
-def emit_reference(ref: dict, indent: str) -> list:
-    """Source lines constructing a pydantic Reference from an AAS JSON
-    reference dict (``{"type": ..., "keys": [...]}``)."""
-    cls = "ModelReference" if ref.get("type") == "ModelReference" else "ExternalReference"
-    key_src = [
-        f'{indent}        Key(type_={json.dumps(k.get("type", ""))}, '
-        f'value={json.dumps(k.get("value", ""))}),'
-        for k in (ref.get("keys") or [])
-    ]
-    lines = [f"{indent}{cls}("]
-    if key_src:
-        lines.append(f"{indent}    key=(")
-        lines.extend(key_src)
-        lines.append(f"{indent}    ),")
-    lines.append(f"{indent})")
-    return lines
+def extract_cardinality(el: dict) -> str:
+    """The element's ``SMT/Cardinality``. An unknown value, or the legacy ``Multiplicity`` qualifier (which older
+    templates used instead), fails the run rather than silently making the element optional."""
+    qualifiers = el.get("qualifiers") or []
+    if any(q.get("type") == "Multiplicity" for q in qualifiers):
+        raise ValueError(f"{el.get('idShort')!r} uses the legacy Multiplicity qualifier; use SMT/Cardinality")
+    values = [(q.get("value") or "").strip() for q in qualifiers if q.get("type") == "SMT/Cardinality"]
+    if len(values) > 1:
+        raise ValueError(f"{el.get('idShort')!r} has {len(values)} SMT/Cardinality qualifiers (AASd-021)")
+    if values and values[0] not in _CARDINALITIES:
+        raise ValueError(f"{el.get('idShort')!r} has the unknown SMT/Cardinality {values[0]!r}")
+    return values[0] if values else "One"
 
 
-def is_placeholder_endpoint(ref) -> bool:
-    """True when a RelationshipElement endpoint is a template placeholder.
+def _qualifier(el: dict, *types: str) -> str:
+    return next(((q.get("value") or "").strip() for q in (el.get("qualifiers") or []) if q.get("type") in types), "")
 
-    Several templates (e.g. HSEM ``SameAs``) declare ``first``/``second`` as a
-    ``ModelReference`` whose only key is a ``GlobalReference`` "EMPTY" — a
-    ModelReference's FIRST key must be an Identifiable (AASd-123), so such
-    endpoints carry no real target and would make the generated class fail
-    validation at import.  Skip them (endpoints stay unset/None).
-    """
-    if not isinstance(ref, dict):
-        return True
-    if ref.get("type") == "ModelReference":
-        keys = ref.get("keys") or []
-        if keys and keys[0].get("type") == "GlobalReference":
-            return True
-    return False
+
+def form_choices(el: dict) -> tuple:
+    """The values a Property may take (``FormChoices`` ``a;b``, ``Enumeration`` ``a, b``)."""
+    value = _qualifier(el, "FormChoices", "Enumeration")
+    return tuple(v.strip() for v in re.split(r"[;,]", value) if v.strip()) if value else ()
+
+
+def allowed_range(el: dict) -> tuple:
+    """``SMT/AllowedRange`` ``[low, high]`` (integers, decimal or hexadecimal)."""
+    match = re.fullmatch(r"\[\s*([^,\]]+?)\s*,\s*([^\]]+?)\s*\]", _qualifier(el, "SMT/AllowedRange"))
+    return match.groups() if match else ()
+
+
+def allowed_id_short(el: dict) -> str:
+    """``AllowedIdShort`` as a regular expression. IDTA writes an optional part in brackets (``Time[\\d{2,3}]``:
+    ``Time``, ``Time01``, …), which as a regex would be a character class."""
+    value = _qualifier(el, "AllowedIdShort")
+    return re.sub(r"\[(.+)\]$", r"(\1)?", value) if value else ""
 
 
 def children_of(el: dict) -> list:
@@ -342,11 +512,20 @@ _RESERVED_FIELDS = {
 
 def element_field(name: str, raw: str, types: tuple[str, ...], *,
                   shape: str = "single", required: bool = False,
-                  minimum: int = 0) -> FieldSpec:
+                  minimum: int = 0, allowed_id_short: str = "", cardinality: str = "") -> FieldSpec:
     """Represent a child before formatting its Python declaration."""
-    renamed = field_name(raw) != raw and not re.search(r"__\d+__$", raw)
+    renamed = field_name(raw) != raw and not _PLACEHOLDER.search(raw)
     return FieldSpec(name, types, shape=shape, required=required,
-                     aas_id_short=raw if renamed else "", minimum=minimum)
+                     aas_id_short=raw if renamed else "", minimum=minimum,
+                     allowed_id_short=allowed_id_short, cardinality=cardinality)
+
+
+# Names a generated module imports; no generated class may take one.
+_IMPORTED_NAMES = {
+    "Any", "ClassVar", "Dict", "List", "Optional", "Union", "TypeAlias", "_Field", "AasIdString",
+    "Submodel", "SubmodelElement", "SubmodelElementCollection", "DynamicSubmodelElementCollection",
+    "SubmodelElementList", "Entity", *ELEMENT_MAP.values(),
+}
 
 
 def gen_template(template_path: str, output_dir: str):
@@ -420,11 +599,6 @@ def gen_template(template_path: str, output_dir: str):
     sml_classes = set()
     leaf_bases = {}  # dedicated leaf element class name → base (leaf) class name
     leaf_identities = {}  # full definition (including metadata) → class name
-    base_aliases = set()
-    _used_leaf_types = {
-        "Submodel", "SubmodelElement", "SubmodelElementCollection",
-        "SubmodelElementList",
-    }
 
     def register(name, meta, body, is_entity=False, is_sml=False):
         if name in leaf_bases or (
@@ -471,7 +645,7 @@ def gen_template(template_path: str, output_dir: str):
             i += 1
         return c
 
-    def leaf_class_for(c: dict, leaf_cls: str) -> str:
+    def leaf_class_for(c: dict, leaf_cls: str, name: str = "") -> str:
         """Register a leaf subclass for each distinct set of template defaults.
 
         Matching occurrences reuse a class; different semantic IDs, model
@@ -479,17 +653,19 @@ def gen_template(template_path: str, output_dir: str):
         field retains its generic type for existing consumers.
         """
         sid = extract_semantic_id(c)
-        elem_name = to_camel(safe_name(c.get("idShort", "")))
+        elem_name = name or to_camel(safe_name(c.get("idShort", "")))
         # Capability is an author-supplied concept in existing subclasses;
         # specializing its field would reject authored Capability instances.
         if not elem_name or (elem_name == leaf_cls and leaf_cls == "Capability") or (
             not sid and not extract_description(c) and not extract_value_type(c)
-            and not extract_supplemental_semantic_ids(c)
+            and not extract_supplemental_semantic_ids(c) and not extract_display_name(c)
+            and not form_choices(c) and not allowed_range(c)
             and not (c.get("contentType") or c.get("content_type"))
-            and not (c.get("first") or c.get("second"))
         ):
             return leaf_cls
         check_class_name(elem_name)
+        # A template's values are examples (a relationship's endpoints, a Property's value): an instance sets its
+        # own, so none of them is a default. A File's or Blob's contentType is: an AIMC Transformation is text.
         meta = metadata_lines(c, include_empty_semantic_id=False)
         vt = extract_value_type(c)
         if vt and leaf_cls in ("Property", "Range"):
@@ -497,21 +673,24 @@ def gen_template(template_path: str, output_dir: str):
         ct = c.get("contentType") or c.get("content_type")
         if ct and leaf_cls in ("File", "Blob"):
             meta.append(f'    content_type: str = {json.dumps(ct)}')
-        if leaf_cls == "RelationshipElement":
-            for key_name in ("first", "second"):
-                ref = c.get(key_name)
-                if isinstance(ref, dict) and not is_placeholder_endpoint(ref):
-                    ref_src = emit_reference(ref, "    ")
-                    # The template's endpoint is an example: it is the default,
-                    # not a restriction to its reference kind. A realized-by
-                    # skill in the same AAS is a ModelReference, an external
-                    # implementation an ExternalReference.
-                    meta.append(f"    {key_name}: Reference = " + ref_src[0].lstrip())
-                    meta.extend(ref_src[1:])
-                    # The closing parenthesis is the value; no trailing comma.
+        choices = form_choices(c)
+        if choices and leaf_cls == "Property":
+            meta.append(f"    FORM_CHOICES: ClassVar[tuple] = {choices!r}")
+        bounds = allowed_range(c)
+        if bounds and leaf_cls == "Property":
+            meta.append(f"    ALLOWED_RANGE: ClassVar[tuple] = {bounds!r}")
         identity = (elem_name, sid, leaf_cls, tuple(meta))
         if identity in leaf_identities:
             return leaf_identities[identity]
+        # The same element, described in one place only: one class, with the description.
+        for (other_name, other_sid, other_cls, other_meta), existing in leaf_identities.items():
+            if ((other_name, other_sid, other_cls, _structural(other_meta)) == (elem_name, sid, leaf_cls,
+                                                                                _structural(meta))
+                    and (set(other_meta) <= set(meta) or set(meta) <= set(other_meta))):
+                merged = _with_descriptions(list(other_meta), meta)
+                classes[existing] = (merged, classes[existing][1])
+                leaf_identities[identity] = existing
+                return existing
         if (elem_name == leaf_cls or elem_name in classes or
                 (_name_identity.get(elem_name) is not None and
                  _name_identity[elem_name] != (elem_name, sid))):
@@ -531,16 +710,16 @@ def gen_template(template_path: str, output_dir: str):
         primary = to_camel(safe_name(c.get("idShort", "")))
         if primary == cls:
             return (cls,)
-        if primary in ELEMENT_MAP.values() and cls in leaf_bases:
-            base_aliases.add(primary)
-            return (cls, f"{primary}_base")
         if (primary != cls and primary in leaf_bases and cls in leaf_bases and
                 leaf_bases[primary] == leaf_bases[cls] and
                 _name_identity.get(primary) == _name_identity.get(cls)):
             return (cls, primary)
         return (cls,)
 
-    def walk(el: dict, stack: tuple = (), name: str = None) -> list:
+    def provisional(name: str, ctx: str) -> str:
+        return f"{name}@{ctx}" if ctx else name
+
+    def walk(el: dict, stack: tuple = (), name: str = None, ctx: str = "") -> list:
         """Register the ``{Name}`` container class for *el* with its children
         as DIRECT named fields (field name == id_short) — no ``value`` /
         ``submodel_element`` / ``statements`` wrapper (the standardized
@@ -573,14 +752,19 @@ def gen_template(template_path: str, output_dir: str):
                                    extract_semantic_id(el))
         mt_el = el.get("modelType", "")
         check_class_name(cname)
+        cname = provisional(cname, ctx)
         kids = children_of(el)
         stack_map = {(b, s): r for b, s, r in stack}
         fields = []
         field_id_shorts = {}
+        alternatives = ALTERNATIVES.get(el.get("idShort", ""))
+        one_of = []
         for c in kids:
             child_name = safe_name(c.get("idShort", ""))
             child_sid = extract_semantic_id(c)
-            child_resolved = resolve_class_name(child_name, child_sid)
+            variant = alternatives.fullmatch(c.get("idShort", "")) if alternatives else None
+            child_ctx = (variant.group(1) if variant and variant.groups() else ctx)
+            child_resolved = provisional(resolve_class_name(child_name, child_sid), child_ctx)
             skey = field_name(c.get("idShort", child_name))  # field = id_short
             if skey in _RESERVED_FIELDS:
                 raise ValueError(f"Child field reserved by AAS model: {skey} in {cname}")
@@ -597,14 +781,13 @@ def gen_template(template_path: str, output_dir: str):
                 "inputVariables", "outputVariables", "inoutputVariables", "inOutputVariables"
             )):
                 raise ValueError(f"Operation variables are not supported for {cname}.{skey}")
-            card = extract_cardinality(c)
-            multi = card in _MULTI_CARDINALITY
-            minimum = {"OneToMany": 1, "TwoToMany": 2, "Three": 3}.get(card, 0)
-            # A missing ``SMT/Cardinality`` qualifier defaults to ``One`` — the
-            # element is mandatory (the only missing-qualifier cases in the
-            # templates are ``forms`` / ``fileName`` / ``definesSecurityScheme``
-            # / ``iolv_payloadMappingElement``).
-            required = card in ("One", None, "")
+            cardinality = extract_cardinality(c)
+            minimum, multi = _CARDINALITIES[cardinality]
+            recorded = cardinality if cardinality == "Recursive" else ""
+            required = minimum > 0 and not multi
+            if alternatives and alternatives.fullmatch(raw_name):
+                required, minimum = False, 0
+                one_of.append(skey)
             if multi:
                 # multi-cardinality → dynamic name-keyed map of this element.
                 # Generic-leaf elements get a dedicated subclass carrying the
@@ -619,22 +802,22 @@ def gen_template(template_path: str, output_dir: str):
                         # default cannot recurse.
                         fields.append(element_field(
                             skey, raw_name, (stack_map[(child_name, child_sid)],),
-                            shape="map", minimum=minimum,
+                            shape="map", minimum=minimum, allowed_id_short=allowed_id_short(c),
+                            cardinality=recorded,
                         ))
                         continue
-                    walk(c, stack + ((child_name, child_sid, child_resolved),))
-                    fields.append(element_field(skey, raw_name, (child_resolved,),
-                                                shape="map", minimum=minimum))
+                    walk(c, stack + ((child_name, child_sid, child_resolved),), ctx=child_ctx)
+                    fields.append(element_field(skey, raw_name, (child_resolved,), shape="map",
+                                                minimum=minimum, allowed_id_short=allowed_id_short(c), cardinality=recorded))
                 elif mt == "SubmodelElementList":
-                    _walk_sml(c, stack)
-                    fields.append(element_field(skey, raw_name, (child_resolved,),
-                                                shape="map", minimum=minimum))
+                    _walk_sml(c, stack, child_ctx)
+                    fields.append(element_field(skey, raw_name, (child_resolved,), shape="map",
+                                                minimum=minimum, allowed_id_short=allowed_id_short(c), cardinality=recorded))
                 else:
                     leaf_cls = ELEMENT_MAP.get(mt, "Property")
-                    _used_leaf_types.add(leaf_cls)
                     elem_cls = leaf_class_for(c, leaf_cls)
-                    fields.append(element_field(skey, raw_name, (elem_cls,),
-                                                shape="map", minimum=minimum))
+                    fields.append(element_field(skey, raw_name, (elem_cls,), shape="map",
+                                                minimum=minimum, allowed_id_short=allowed_id_short(c), cardinality=recorded))
                 continue
             if mt in ("SubmodelElementCollection", "Entity"):
                 if (child_name, child_sid) in stack_map:
@@ -646,16 +829,15 @@ def gen_template(template_path: str, output_dir: str):
                     rec = stack_map[(child_name, child_sid)]
                     fields.append(element_field(skey, raw_name, (rec,)))
                     continue
-                walk(c, stack + ((child_name, child_sid, child_resolved),))
+                walk(c, stack + ((child_name, child_sid, child_resolved),), ctx=child_ctx)
                 fields.append(element_field(skey, raw_name, (child_resolved,),
                                             required=required))
             elif mt == "SubmodelElementList":
-                _walk_sml(c, stack)
+                _walk_sml(c, stack, child_ctx)
                 fields.append(element_field(skey, raw_name, (child_resolved,),
                                             required=required))
             else:
                 leaf_cls = ELEMENT_MAP.get(mt, "Property")
-                _used_leaf_types.add(leaf_cls)
                 types = leaf_annotation(c, leaf_class_for(c, leaf_cls))
                 fields.append(element_field(skey, raw_name, types,
                                             required=required))
@@ -664,24 +846,24 @@ def gen_template(template_path: str, output_dir: str):
         # wrapper).  Required children have NO default — pydantic enforces they
         # are provided.
         meta = metadata_lines(el)
+        if one_of:
+            meta.append(f"    IDTA_ONE_OF: ClassVar[tuple] = {tuple(one_of)!r}")
         is_entity = mt_el == "Entity"
         if is_entity:
-            _used_leaf_types.add("Entity")
+            # Its globalAssetId is an example: the instance names its asset.
             meta.append(
                 f'    entity_type: str = {json.dumps(el.get("entityType", "CoManagedEntity"))}'
             )
-            gid = el.get("globalAssetId")
-            if gid:
-                meta.append(f'    global_asset_id: str = {json.dumps(gid)}')
         register(cname, meta, fields, is_entity=is_entity)
         return fields
 
-    def _walk_sml(c: dict, stack: tuple):
+    def _walk_sml(c: dict, stack: tuple, ctx: str = ""):
         """Register an SML class with a typed ``value: List[Item]`` (AASd-108:
         homogeneous lists only — heterogeneous ones start empty)."""
         cname = resolve_class_name(safe_name(c.get("idShort", "")),
                                    extract_semantic_id(c))
         check_class_name(cname)
+        cname = provisional(cname, ctx)
         item_kids = children_of(c)
         sub_meta = metadata_lines(c)
         declared_item = c.get("typeValueListElement")
@@ -704,35 +886,38 @@ def gen_template(template_path: str, output_dir: str):
             ):
                 raise ValueError(f"Unsupported list item modelType {imt!r} for {cname}")
             if imt in ("SubmodelElementCollection", "Entity"):
-                item_name = safe_name(item.get("idShort", f"{cname}Item"))
+                item_name = safe_name(item.get("idShort", f"{cname.split('@')[0]}Item"))
                 item_sid = extract_semantic_id(item)
                 if (item_name, item_sid) in stack_map:
                     # Recursive item — skip entirely.
                     continue
-                item_resolved = resolve_class_name(item_name, item_sid)
+                item_resolved = provisional(resolve_class_name(item_name, item_sid), ctx)
                 walk(item, stack + ((item_name, item_sid, item_resolved),),
-                     name=item_name)
+                     name=item_name, ctx=ctx)
                 item_classes.add(item_resolved)
             elif imt == "SubmodelElementList":
                 item_classes.add("SubmodelElementList")
             else:
-                leaf_cls = ELEMENT_MAP[imt]
-                _used_leaf_types.add(leaf_cls)
-                item_classes.add(leaf_cls)
+                item_classes.add(ELEMENT_MAP[imt])
         if declared_item in ELEMENT_MAP and not any(
             item.get("modelType") in ("SubmodelElementCollection", "Entity")
             for item in item_kids
         ):
             item_classes = {ELEMENT_MAP[declared_item]}
-        if declared_value_type and item_classes == {"Property"}:
-            item_name = f"{cname}Item"
-            item_meta = [f'    value_type: str = {json.dumps(declared_value_type)}']
-            if item_name in classes and classes[item_name][0] != item_meta:
-                raise ValueError(f"Conflicting list item class metadata: {item_name}")
-            if item_name not in classes:
-                register(item_name, item_meta, [])
-                leaf_bases[item_name] = "Property"
-            item_classes = {item_name}
+        if len(item_classes) == 1 and next(iter(item_classes)) in ELEMENT_MAP.values():
+            # Leaf items: a class of their own when the template describes them (a semanticId, a description,
+            # the list's value type), named after the list.
+            leaf_cls = next(iter(item_classes))
+            example = next((item for item in item_kids if item.get("modelType") == leaf_cls), {})
+            described = {**example, "valueType": example.get("valueType") or declared_value_type or ""}
+            described.pop("idShort", None)
+            item_classes = {leaf_class_for(described, leaf_cls, name=f"{cname.split('@')[0]}Item")}
+        item_cardinality = next((_qualifier(item, "SMT/Cardinality") for item in item_kids), "")
+        if item_cardinality:
+            if item_cardinality not in _CARDINALITIES:
+                raise ValueError(f"{cname}: its items have the unknown SMT/Cardinality {item_cardinality!r}")
+            # How many items the list holds (``OneToMany``: at least one).
+            sub_meta.append(f"    ITEM_CARDINALITY: ClassVar[str] = {item_cardinality!r}")
         if item_classes and len(item_classes) == 1:
             # Homogeneous list — declare item_type so back-conversion can
             # restore item types (AASd-114 strips item semanticIds in basyx),
@@ -750,13 +935,18 @@ def gen_template(template_path: str, output_dir: str):
             sml_body = [FieldSpec("value", ("Any",), shape="list")]
         register(cname, sub_meta, sml_body, is_sml=True)
 
-    sm_meta = metadata_lines(sm)
     walk(sm)
+    # The submodel's metadata as the walk registered it (with its IDTA_ONE_OF), plus its version.
+    sm_meta = list(classes[sm_name][0])
 
-    admin = sm.get("administration", {})
-    sm_meta.append(f'    VERSION: ClassVar[str] = "{admin.get("version", "1")}"')
-    sm_meta.append(f'    REVISION: ClassVar[str] = "{admin.get("revision", "0")}"')
-    # prepend the Submodel-level meta (walk registered semantic_id/description)
+    admin = sm.get("administration") or {}
+    version, revision = admin.get("version"), admin.get("revision")
+    if not (version and revision):
+        # Unknown when the semanticId does not carry it either; never invented.
+        match = re.search(r"/(\d+)/(\d+)(?:/Submodel)?$", extract_semantic_id(sm))
+        version, revision = match.groups() if match else ("", "")
+    sm_meta.append(f'    VERSION: ClassVar[str] = "{version}"')
+    sm_meta.append(f'    REVISION: ClassVar[str] = "{revision}"')
     classes[sm_name] = (sm_meta, classes[sm_name][1])
 
     # ── Assemble file ──
@@ -764,21 +954,30 @@ def gen_template(template_path: str, output_dir: str):
     body = []
     aliases_emitted = set()
     alias_definitions = []
-    for name in order:
-        meta, cbody = classes[name]
-        if name == sm_name:
+    emitted, _ = _variant_classes(order, classes)
+    kind_names = {name.split("@")[0] for name in entity_classes}, {name.split("@")[0] for name in sml_classes}
+    shared_bases = {parent for _, parent, _, _ in emitted if parent}
+    for name, parent, meta, cbody in emitted:
+        if parent:
+            base = parent
+        elif name == sm_name:
             base = "Submodel"
-        elif name in entity_classes:
+        elif name in kind_names[0]:
             base = "Entity"
-        elif name in sml_classes:
+        elif name in kind_names[1]:
             base = "SubmodelElementList"
         elif name in leaf_bases:
             base = leaf_bases[name]
+        elif not cbody and name not in shared_bases:
+            # The template declares no children: an instance holds whatever elements it needs.
+            base = "DynamicSubmodelElementCollection"
         else:
             base = "SubmodelElementCollection"
+        if name in _IMPORTED_NAMES:
+            raise ValueError(f"Generated class {name} would shadow an imported name")
         body.append(f"class {name}({base}):")
         body.extend(meta)
-        if not cbody and base in ("Submodel", "Entity", "SubmodelElementCollection"):
+        if not cbody and not meta:
             body.append('    pass')
         for field in cbody:
             # Pydantic resolves a same-named annotation to the field itself.
@@ -796,11 +995,9 @@ def gen_template(template_path: str, output_dir: str):
     # for recursive/list graphs where a same-named referenced container is
     # registered later in document traversal order.
     body.extend(alias_definitions)
-    for base in sorted(base_aliases):
-        body.append(f"{base}_base: TypeAlias = {base}")
 
     body.append('# ── Resolve forward references (Pydantic circular refs) ──')
-    for name in order:
+    for name, _, _, _ in emitted:
         body.append(f'{name}.model_rebuild()')
     body.append('')
 
@@ -819,34 +1016,18 @@ def gen_template(template_path: str, output_dir: str):
     lines.append('')
     lines.append('from __future__ import annotations')
     lines.append('')
-    typing_names = ["Any", "ClassVar", "List"]
-    if "Dict[" in all_src:
-        typing_names.append("Dict")
-    if "Optional[" in all_src:
-        typing_names.append("Optional")
-    if "Union[" in all_src:
-        typing_names.append("Union")
-    if ": TypeAlias" in all_src:
-        typing_names.append("TypeAlias")
+    # Import exactly the names the generated code uses.
+    used = {t.string for t in tokenize.generate_tokens(io.StringIO(all_src).readline) if t.type == tokenize.NAME}
+    typing_names = [n for n in ("Any", "ClassVar", "Dict", "List", "Optional", "TypeAlias", "Union") if n in used]
     lines.append(f"from typing import {', '.join(typing_names)}")
     lines.append('from aas_pydantic import (')
-    aas_types = {"Submodel", "SubmodelElement", "SubmodelElementCollection",
-                 "SubmodelElementList", "Entity", "Qualifier",
-                 "ExternalReference", "ModelReference", "Key"}
-    aas_types |= set(ELEMENT_MAP.values())
-    imports = sorted(t for t in _used_leaf_types if t in aas_types)
-    # Reference endpoints (first/second) are typed Reference and default to an
-    # ExternalReference/ModelReference of Keys.
-    if ": Reference = " in all_src:
-        imports = sorted(set(imports) | {"Reference"})
-    if "ExternalReference(" in all_src:
-        imports = sorted(set(imports) | {"ExternalReference", "Key"})
-    if "ModelReference(" in all_src:
-        imports = sorted(set(imports) | {"ModelReference", "Key"})
+    imports = sorted(n for n in _IMPORTED_NAMES - {"Any", "ClassVar", "Dict", "List", "Optional", "Union",
+                                                   "TypeAlias", "_Field", "AasIdString"} if n in used)
     lines.append('    ' + ', '.join(imports) + ',')
     lines.append(')')
-    if "Field(" in all_src:
-        lines.append('from pydantic import Field')
+    if "_Field(" in all_src:
+        # Under a private name: a template may name an element ``field``.
+        lines.append('from pydantic import Field as _Field')
     if ": AasIdString" in all_src:
         lines.append('from aas_pydantic.aas_model import AasIdString')
     lines.append('')
@@ -858,7 +1039,7 @@ def gen_template(template_path: str, output_dir: str):
     with open(out_path, "w") as f:
         f.write("\n".join(lines))
     print(f"✅ {out_path}")
-    print(f"   {sm_name}(Submodel) + {len(order) - 1} classes")
+    print(f"   {sm_name}(Submodel) + {len(emitted) - 1} classes")
 
 
 if __name__ == "__main__":

@@ -1,31 +1,28 @@
 """AAU production planner instance."""
 
-from aas_model.constants import CSSX, SCHEMA_BASE
-from aas_model.constants import BASE_URL, BROKER, SITE
+from aas_model.constants import BASE_URL, BROKER, CSSX, SCHEMA_BASE, SITE, STATE_OPERATIONAL
 from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic.submodel_templates.nameplate import (
-    Nameplate, URIOfTheProduct, ManufacturerName, ManufacturerProductDesignation,
-    ManufacturerProductType, OrderCodeOfManufacturer, SerialNumber,
-    YearOfConstruction, CountryOfOrigin,
+from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template.resources import MqttSoftwareResource
+from aas_model.resource_template.references import (
+    MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, skill_ref, variable_ref,
 )
-from aas_model.resource_template.software import MqttSoftwareResource
-from aas_model.resource_template.asset_interfaces_description import MQTT_INTERFACE, affordance_ref, mqtt_action, mqtt_property
-from aas_model.submodel_templates.control_component_instance import ExtendedSkill, SkillOperation, SkillInterfaceRelationship, OptionalVariable
+from aas_model.submodel_templates.control_component_instance import (
+    ExtendedSkill, SkillOperation, SkillInterfaceRelationship, OptionalVariable,
+)
 from aas_model.submodel_templates.variables import VariableProp
+from aas_model.submodel_templates import DmpResponseSink, DmpResponseSource
 from aas_model.submodel_templates.aimc import DmpMappingConfiguration
-from aas_model.submodel_templates import Transformation
-from aas_model.resource_template.asset_interfaces_mapping_configuration import (
-    variable_ref, operation_sources,
+from aas_pydantic import Capability, Property
+from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import (
+    Source as SourceReference, Sink as SinkReference, SourcesItem, SinksItem,
 )
-from aas_pydantic import Capability, ExternalReference, Key, ModelReference, Property, Qualifier
-from aas_pydantic.submodel_templates.asset_interfaces_description import Key as AIDKey, Title as AIDTitle
-from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import Source as SourceReference, Sink as SinkReference, SourcesItem, SinksItem, Sources, Sinks, SourceId, SinkId, DefaultPollingInterval
-from aas_pydantic.submodel_templates.capability_description import CapabilityContainer, CapabilitySet, CapabilityRelations, CapabilityRealizedBy
-from aas_model.json_schema_aid import load_schema, datapoint_from_schema, without
-from aas_model.constants import INVOCATION_URL_TEMPLATE
-from aas_model.invocation_authoring import finalize_invocation_addresses
-from aas_model.resource_template.control_component_instance import skill_ref
-from aas_model.resource_template.operational import action_member_ref, command_reply
+from aas_pydantic.submodel_templates.capability_description import (
+    CapabilityContainer, CapabilitySet, CapabilityRelations, CapabilityRealizedBy,
+)
+from aas_model.json_schema_aid import datapoint_from_schema, load_schema, without
+from aas_model.submodel_templates.aid import DmpActionInput, DmpActionOutput, MqttAction, MqttActionForm, MqttForm
+from aas_pydantic.submodel_templates.asset_interfaces_description import Title
 
 
 def production_planner() -> MqttSoftwareResource:
@@ -35,14 +32,14 @@ def production_planner() -> MqttSoftwareResource:
         id_short=identity, id=f"{BASE_URL}/aas/{identity}",
         asset_type=f"{CSSX}#ProductionPlanner", specific_asset_ids={"serialNumber": serial},
         nameplate=Nameplate(
-            id_short="Nameplate", URIOfTheProduct=URIOfTheProduct(value=f"{BASE_URL}/aas/{identity}"),
+            URIOfTheProduct=f"{BASE_URL}/aas/{identity}",
             ManufacturerName=ManufacturerName(value={"en": "Aalborg University"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "AAU Production Planner"}),
-            ManufacturerProductType=ManufacturerProductType(value="AAU Production Planner"),
+            ManufacturerProductType="AAU Production Planner",
             AddressInformation=SITE_ADDRESS.model_copy(deep=True),
-            OrderCodeOfManufacturer=OrderCodeOfManufacturer(value=serial),
-            SerialNumber=SerialNumber(value=serial), YearOfConstruction=YearOfConstruction(value="2024"),
-            CountryOfOrigin=CountryOfOrigin(value="DK"),
+            OrderCodeOfManufacturer=serial,
+            SerialNumber=serial, YearOfConstruction="2024",
+            CountryOfOrigin="DK",
         ),
     )
     input_url = f"{SCHEMA_BASE}/planningCommand.schema.json"
@@ -50,22 +47,38 @@ def production_planner() -> MqttSoftwareResource:
     mqtt = resource.asset_interfaces_description.InterfaceTemplateForMQTT["interface_mqtt"]
     mqtt.title.value = "AAU Production Planner"
     mqtt.EndpointMetadata.base.value = f"{BROKER}/{SITE}/ProductionPlanner/"
-    action = mqtt_action("Plan", synchronous=True,
-                         input_schema=load_schema(input_url), input_schema_url=input_url,
-                         # TD/AID cannot express additionalProperties (the Resources and
-                         # PlanningArtifacts maps): dropped, so their values are not typed.
-                         output_schema=without(load_schema(output_url), "additionalProperties"),
-                         output_schema_url=output_url)
+    action = MqttAction(
+        title="Plan",
+        synchronous="true",
+        input=datapoint_from_schema(load_schema(input_url), cls=DmpActionInput, schema_url=input_url),
+        output=datapoint_from_schema(
+            without(load_schema(output_url), "additionalProperties"), cls=DmpActionOutput, schema_url=output_url
+        ),
+        forms=MqttActionForm(href="CMD/Plan", mqv_qos="2", mqv_responseTopic="DATA/Plan"),
+    )
     mqtt.InteractionMetadata.actions.property_name["Plan"] = action
     # Unlike the orchestrator's State schema, the planner reports StationState.
     state_url = f"{SCHEMA_BASE}/stationState.schema.json"
-    state = mqtt_property("StationState", "DATA/State", schema=load_schema(state_url), schema_url=state_url)
+    state = datapoint_from_schema(
+        load_schema(state_url),
+        key="StationState",
+        schema_url=state_url,
+        title=Title(value="StationState"),
+        observable="true",
+        readOnly="true",
+        forms=MqttForm(href="DATA/State", mqv_retain="true", mqv_qos="0"),
+    )
     mqtt.InteractionMetadata.properties.property_name["StationState"] = state
-    resource.variables.variable["PackMLState"] = VariableProp(id_short="PackMLState", semantic_id="https://w3id.org/2026/apex/semantic/state/operational")
-    plan = ExtendedSkill(id_short="Plan")
-    plan.Disabled.value = "false"
-    plan.interface_reference.value = ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/AssetInterfacesDescription"), Key(type_="SubmodelElementCollection", value="interface_mqtt"), Key(type_="SubmodelElementCollection", value="InteractionMetadata"), Key(type_="SubmodelElementCollection", value="actions"), Key(type_="SubmodelElementCollection", value="Plan")))
-    plan.operation = SkillOperation(id_short="operation", qualifiers=[Qualifier(type_="invocationDelegation", value=INVOCATION_URL_TEMPLATE, value_type="xs:string", kind="ConceptQualifier"), Qualifier(type_="Synchronous", value="true", value_type="xs:string", kind="ConceptQualifier")], in_output_variable=[Property(id_short="Uuid", description="The UUID of the command")], output_variable=[Property(id_short="State", description="The state of the command being executed")])
+    resource.variables.variable["PackMLState"] = VariableProp(
+        id_short="PackMLState", semantic_id=STATE_OPERATIONAL
+    )
+    plan = ExtendedSkill(
+        Disabled="false", interface_reference=affordance_ref(MQTT_INTERFACE, "actions", "Plan")
+    )
+    plan.operation = SkillOperation(
+        in_output_variable=[Property(id_short="Uuid", description="The UUID of the command")],
+        output_variable=[Property(id_short="State", description="The state of the command being executed")],
+    )
     plan.operation.input_variable = [
         Property(id_short="Assets", value="[]", description="JSON array of resource AAS identifiers."),
         Property(id_short="Order"),
@@ -77,16 +90,66 @@ def production_planner() -> MqttSoftwareResource:
     ])
     cci = resource.control_component_instance
     cci.Skills.Skill["Plan"] = plan
-    cci.Endpoints.Endpoint["Plan"] = SkillInterfaceRelationship(id_short="Plan", first=ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/ControlComponentInstance"), Key(type_="SubmodelElementCollection", value="Skills"), Key(type_="SubmodelElementCollection", value="Plan"))), second=ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/AssetInterfacesDescription"), Key(type_="SubmodelElementCollection", value="interface_mqtt"), Key(type_="SubmodelElementCollection", value="InteractionMetadata"), Key(type_="SubmodelElementCollection", value="actions"), Key(type_="SubmodelElementCollection", value="Plan"))))
-    mapping = DmpMappingConfiguration(id_short="Plan", DefaultPollingInterval=DefaultPollingInterval(value="0.0"), Transformation=Transformation(value=""), Sources=Sources(value=operation_sources("Plan", ["Uuid", "Assets", "Order"])), Sinks=Sinks(value=[SinksItem(id_short="Plan", Sink=SinkReference(value=action_member_ref(MQTT_INTERFACE, "Plan", "input")), SinkId=SinkId(value="Plan"))]),
-        **command_reply(MQTT_INTERFACE, "Plan", outputs=("Uuid", "State", "ProcessAasId", "ProductAasId", "ErrorMessage")))
-    # AAS operation Properties are scalar; the native MQTT schema requires an array.
-    mapping.Transformation.value = b"""function aimc_main(sources)
+    cci.Endpoints.Endpoint["Plan"] = SkillInterfaceRelationship(
+        first=skill_ref("Plan"),
+        second=affordance_ref(MQTT_INTERFACE, "actions", "Plan"),
+    )
+    mapping = DmpMappingConfiguration(
+        id_short="Plan",
+        DefaultPollingInterval="0.0",
+        # AAS operation Properties are scalar; the native MQTT schema requires an array.
+        Transformation="""function aimc_main(sources)
     return { Plan = { Uuid = sources.Uuid, Assets = json.decode(sources.Assets), Order = sources.Order } }
 end
-"""
+""",
+        Sources=[
+            SourcesItem(SourceId=name, Source=operation_variable_ref("Plan", name))
+            for name in ("Uuid", "Assets", "Order")
+        ],
+        Sinks=[SinksItem(SinkId="Plan", Sink=action_member_ref(MQTT_INTERFACE, "Plan", "input"))],
+        ResponseSources=[
+            DmpResponseSource(SourceId="Reply", Source=action_member_ref(MQTT_INTERFACE, "Plan", "output")),
+        ],
+        ResponseTransformation=(
+            "function aimc_main(sources) local reply = sources.Reply "
+            "return { Uuid = reply.Uuid, State = reply.State, ProcessAasId = reply.ProcessAasId, "
+            "ProductAasId = reply.ProductAasId, ErrorMessage = reply.ErrorMessage } end"
+        ),
+        ResponseSinks=[DmpResponseSink(SinkId=member, Sink=operation_variable_ref("Plan", member))
+                       for member in ("Uuid", "State", "ProcessAasId", "ProductAasId", "ErrorMessage")],
+    )
     resource.asset_interfaces_mapping_configuration.MappingConfigurations.value.append(mapping)
-    resource.asset_interfaces_mapping_configuration.MappingConfigurations.value.append(DmpMappingConfiguration(id_short="ObserveStationState", DefaultPollingInterval=DefaultPollingInterval(value="0.0"), Transformation=Transformation(value="function aimc_main(sources) return { PackMLState = sources.StationState.State } end"), Sources=Sources(value=[SourcesItem(id_short="StationState", Source=SourceReference(value=affordance_ref(MQTT_INTERFACE, "properties", "StationState")), SourceId=SourceId(value="StationState"))]), Sinks=Sinks(value=[SinksItem(id_short="PackMLState", Sink=SinkReference(value=variable_ref("PackMLState")), SinkId=SinkId(value="PackMLState"))])))
-    resource.capability_description.CapabilitySet = {"Planning": CapabilitySet(id_short="Planning", CapabilityContainer={"Plan": CapabilityContainer(id_short="Plan", Capability=Capability(id_short="Capability", semantic_id=f"{CSSX}#Plan"), CapabilityRelations=CapabilityRelations(id_short="CapabilityRelations", CapabilityRealizedBy={"RealizedBy_Plan": CapabilityRealizedBy(id_short="RealizedBy_Plan", first=ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/CapabilityDescription"), Key(type_="SubmodelElementCollection", value="Planning"), Key(type_="SubmodelElementCollection", value="Plan"), Key(type_="Capability", value="Capability"))), second=skill_ref("Plan")) }))})}
-    finalize_invocation_addresses(resource)
+    resource.asset_interfaces_mapping_configuration.MappingConfigurations.value.append(
+        DmpMappingConfiguration(
+            id_short="ObserveStationState",
+            DefaultPollingInterval="0.0",
+            Transformation="function aimc_main(sources) return { PackMLState = sources.StationState.State } end",
+            Sources=[
+                SourcesItem(
+                    Source=SourceReference(value=affordance_ref(MQTT_INTERFACE, "properties", "StationState")),
+                    SourceId="StationState",
+                )
+            ],
+            Sinks=[SinksItem(Sink=SinkReference(value=variable_ref("PackMLState")), SinkId="PackMLState")],
+        )
+    )
+    resource.capability_description.CapabilitySet = {
+        "Planning": CapabilitySet(
+            id_short="Planning",
+            CapabilityContainer={
+                "Plan": CapabilityContainer(
+                    id_short="Plan",
+                    Capability=Capability(id_short="Capability", semantic_id=f"{CSSX}#Plan"),
+                    CapabilityRelations=CapabilityRelations(
+                        CapabilityRealizedBy={
+                            "RealizedBy_Plan": CapabilityRealizedBy(
+                                first=capability_ref("Planning", "Plan"),
+                                second=skill_ref("Plan"),
+                            )
+                        }
+                    ),
+                )
+            },
+        )
+    }
     return resource

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from aas_model._serde import parse_submodel_dict
+from aas_json import parse_submodel_dict
 from aas_model.constants import AID_WOT_ONE_OF, AID_WOT_REQUIRED
 from aas_model.json_schema_aid import datapoint_from_schema, load_schema, schema_from_datapoint, without
 from aas_model.submodel_templates.aid import (

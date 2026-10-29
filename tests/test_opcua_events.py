@@ -9,7 +9,7 @@ import json
 from aas_pydantic.convert_pydantic_model import convert_model_to_submodel
 from basyx.aas.adapter.json import AASToJsonEncoder
 
-from aas_model._serde import parse_submodel_dict
+from aas_json import parse_submodel_dict
 from aas_model.constants import (
     AID_EVENT_DEFINITION, AID_EVENT_CANCELLATION, AID_EVENT_DATA, AID_EVENT_DATA_RESPONSE,
     AID_EVENT_SUBSCRIPTION, AID_OPCUA_EVENT_FIELD, AID_OPCUA_EVENT_TYPE,

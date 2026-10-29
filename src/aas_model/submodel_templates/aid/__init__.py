@@ -56,26 +56,26 @@ from aas_model.submodel_templates.aid.interface import (
     DmpEndpointMetadata,
 )
 from aas_model.submodel_templates.aid.bindings.http import (
-    DmpHttpInterface,
+    HttpForm, HttpActionForm, DmpHttpInterface,
 )
 from aas_model.submodel_templates.aid.bindings.modbus import (
-    DmpModbusInterface,
+    ModbusForm, ModbusActionForm, DmpModbusEndpointMetadata, DmpModbusInterface,
 )
 from aas_model.submodel_templates.aid.bindings.bacnet import (
-    DmpBacnetInterface,
+    BacnetForm, BacnetActionForm, DmpBacnetInterface,
 )
 from aas_model.submodel_templates.aid.bindings.iolink import (
-    DmpIolinkInterface,
+    IolinkForm, IolinkActionForm, DmpIolinkInterface,
 )
 from aas_model.submodel_templates.aid.bindings.can import (
-    DmpCanInterface,
+    CanForm, CanActionForm, DmpCanInterface,
 )
 from aas_model.submodel_templates.aid.bindings.mqtt import (
-    MqvResponseTopic, MqttActionForm, MqttAction, MqttActions, MqttInteractionMetadata,
+    MqvResponseTopic, MqttForm, MqttActionForm, MqttAction, MqttActions, MqttInteractionMetadata,
     MqttInterface,
 )
 from aas_model.submodel_templates.aid.bindings.opcua import (
-    UavComponentOf, OpcuaActionForm, OpcuaAction, OpcuaActions, UavEventType, UavEventField,
+    UavComponentOf, OpcuaForm, OpcuaActionForm, DmpOpcuaEndpointMetadata, OpcuaAction, OpcuaActions, UavEventType, UavEventField,
     OpcuaEventField, OpcuaEventFields, OpcuaEventData, OpcuaEvent, OpcuaEvents,
     OpcuaInteractionMetadata, DmpOpcuaInterface,
 )
@@ -93,13 +93,13 @@ __all__ = [
     "Op", "AdditionalResponseSuccess", "AdditionalResponseSchema", "AdditionalResponse", "AdditionalResponses", "DmpForm", "DmpResponseForm", "DmpActionForm",
     "DmpProperty", "DmpProperties", "Safe", "Idempotent", "Synchronous", "DmpActionInput", "DmpActionOutput", "DmpAction", "DmpActions", "DmpEventSubscription", "DmpEventData", "DmpEventDataResponse", "DmpEventCancellation", "DmpEvent", "DmpEvents", "DmpInteractionMetadata",
     "DmpEndpointMetadata",
-    "DmpHttpInterface",
-    "DmpModbusInterface",
-    "DmpBacnetInterface",
-    "DmpIolinkInterface",
-    "DmpCanInterface",
-    "MqvResponseTopic", "MqttActionForm", "MqttAction", "MqttActions", "MqttInteractionMetadata", "MqttInterface",
-    "UavComponentOf", "OpcuaActionForm", "OpcuaAction", "OpcuaActions", "UavEventType", "UavEventField", "OpcuaEventField", "OpcuaEventFields", "OpcuaEventData", "OpcuaEvent", "OpcuaEvents", "OpcuaInteractionMetadata", "DmpOpcuaInterface",
+    "HttpForm", "HttpActionForm", "DmpHttpInterface",
+    "ModbusForm", "ModbusActionForm", "DmpModbusEndpointMetadata", "DmpModbusInterface",
+    "BacnetForm", "BacnetActionForm", "DmpBacnetInterface",
+    "IolinkForm", "IolinkActionForm", "DmpIolinkInterface",
+    "CanForm", "CanActionForm", "DmpCanInterface",
+    "MqvResponseTopic", "MqttForm", "MqttActionForm", "MqttAction", "MqttActions", "MqttInteractionMetadata", "MqttInterface",
+    "UavComponentOf", "OpcuaForm", "OpcuaActionForm", "DmpOpcuaEndpointMetadata", "OpcuaAction", "OpcuaActions", "UavEventType", "UavEventField", "OpcuaEventField", "OpcuaEventFields", "OpcuaEventData", "OpcuaEvent", "OpcuaEvents", "OpcuaInteractionMetadata", "DmpOpcuaInterface",
     "SnmpvPduType", "SnmpvVersion", "SnmpForm", "SnmpProperty", "SnmpProperties", "SnmpInteractionMetadata", "DmpSnmpInterface",
     "DmpAssetInterfacesDescription",
 ]

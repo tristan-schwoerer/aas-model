@@ -9,7 +9,7 @@ from aas_pydantic import Property, SubmodelElementCollection, SubmodelElementLis
 from aas_pydantic.convert_util import strip_temp_id_short_attributes
 from basyx.aas.adapter.json import json_serialization
 
-from aas_model._serde import parse_submodel_dict
+from aas_json import parse_submodel_dict
 from aas_model.builder import build_from_model
 from aas_model.resource_instances import RESOURCE_FACTORIES
 from aas_model.submodel_templates.control_component_instance import (

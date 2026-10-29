@@ -3,31 +3,25 @@
 from aas_pydantic import Property
 from aas_model.constants import BASE_URL, BROKER, SITE
 from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic.submodel_templates.nameplate import (
-    Nameplate, URIOfTheProduct, ManufacturerName, ManufacturerProductDesignation,
-    ManufacturerProductType, OrderCodeOfManufacturer, SerialNumber,
-    YearOfConstruction, CountryOfOrigin,
-)
-from aas_pydantic.submodel_templates.hierarchical_structures import (
-    ArcheType, EntryNode, HierarchicalStructures, IsPartOf, Node,
-)
+from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_pydantic.submodel_templates.hierarchical_structures import EntryNode, Node
 from aas_model.resource_template.operational import (
-    action_member_ref,
-    OperationalMqttInterfaces, OperationalMqttControlComponent,
-    OperationalMqttMappings, operational_variables, command_reply,
+    OperationalMqttControlComponent, OperationalMqttInterfaces, OperationalMqttMappings, OperationalVariables,
 )
-from aas_model.resource_template.stations import LoadingStation
-from aas_model.constants import INVOCATION_URL_TEMPLATE, SCHEMA_BASE
-from aas_model.json_schema_aid import load_schema
-from aas_pydantic import ExternalReference, Key, ModelReference, Qualifier, ReferenceElement
-from aas_model.resource_template.asset_interfaces_description import MQTT_INTERFACE, affordance_ref, mqtt_action
-from aas_model.submodel_templates.control_component_instance import EXTENDED_SKILL_INTERFACE_REF, ExtendedSkill, SkillOperation, SkillInterfaceRelationship, OptionalVariable
-from aas_model.resource_template.control_component_instance import skill_ref
-from aas_model.resource_template.asset_interfaces_mapping_configuration import operation_sources
-from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import SourcesItem, SinksItem, Source, SourceId, Sink, SinkId, Sources, Sinks, DefaultPollingInterval
-from aas_model.submodel_templates import AimcMappingConfiguration, Transformation
+from aas_model.resource_template.resources import LoadingStation
+from aas_model.constants import SCHEMA_BASE
+from aas_model.json_schema_aid import datapoint_from_schema, load_schema
+from aas_model.resource_template.references import (
+    MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, skill_ref,
+)
+from aas_model.submodel_templates.control_component_instance import (
+    ExtendedSkill, OptionalVariable, SkillInterfaceRelationship, SkillOperation,
+)
+from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import SourcesItem, SinksItem
+from aas_model.submodel_templates import AimcMappingConfiguration, DmpResponseSink, DmpResponseSource
 from aas_pydantic.submodel_templates.capability_description import CapabilityRealizedBy, CapabilityRelations
-from aas_model.invocation_authoring import finalize_invocation_addresses
+from aas_model.submodel_templates.aid import DmpActionInput, DmpActionOutput, MqttAction, MqttActionForm
+from aas_model.submodel_templates.hierarchical_structures import ResourceHierarchicalStructures
 
 
 def ima_loading() -> LoadingStation:
@@ -36,27 +30,24 @@ def ima_loading() -> LoadingStation:
     parent = "aauFillingLineAAS"
     resource_id = f"{BASE_URL}/aas/{identity}"
     resource = LoadingStation(
-        id_short=identity, id=resource_id, specific_asset_ids={"serialNumber": serial},
+        id_short=identity,
+        id=resource_id,
+        specific_asset_ids={"serialNumber": serial},
         nameplate=Nameplate(
-            id_short="Nameplate", URIOfTheProduct=URIOfTheProduct(value=resource_id),
+            URIOfTheProduct=resource_id,
             ManufacturerName=ManufacturerName(value={"en": "IMA"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "IMA Loading System"}),
-            ManufacturerProductType=ManufacturerProductType(value="IMA Loading System"),
+            ManufacturerProductType="IMA Loading System",
             AddressInformation=SITE_ADDRESS.model_copy(deep=True),
-            OrderCodeOfManufacturer=OrderCodeOfManufacturer(value=serial),
-            SerialNumber=SerialNumber(value=serial), YearOfConstruction=YearOfConstruction(value="2024"),
-            CountryOfOrigin=CountryOfOrigin(value="IT"),
+            OrderCodeOfManufacturer=serial,
+            SerialNumber=serial,
+            YearOfConstruction="2024",
+            CountryOfOrigin="IT",
         ),
-        hierarchical_structures=HierarchicalStructures(
-            id_short="HierarchicalStructures", ArcheType=ArcheType(value="OneUp"),
+        hierarchical_structures=ResourceHierarchicalStructures(
+            ArcheType="OneUp",
             EntryNode=EntryNode(
-                id_short="EntryNode", global_asset_id=resource_id,
-                Node={parent: Node(id_short=parent, global_asset_id=f"{BASE_URL}/aas/{parent}")},
-                IsPartOf={f"PartOf_{parent}": IsPartOf(
-                    id_short=f"PartOf_{parent}",
-                    first=ExternalReference(key=(Key(type_="GlobalReference", value=resource_id),)),
-                    second=ExternalReference(key=(Key(type_="GlobalReference", value=f"{BASE_URL}/aas/{parent}"),)),
-                )},
+                global_asset_id=resource_id, Node={parent: Node(global_asset_id=f"{BASE_URL}/aas/{parent}")}
             ),
         ),
         asset_interfaces_description=OperationalMqttInterfaces(id_short="AssetInterfacesDescription"),
@@ -64,7 +55,7 @@ def ima_loading() -> LoadingStation:
         asset_interfaces_mapping_configuration=OperationalMqttMappings(
             id_short="AssetInterfacesMappingConfiguration",
         ),
-        variables=operational_variables(),
+        variables=OperationalVariables(),
     )
     mqtt = resource.asset_interfaces_description.InterfaceTemplateForMQTT["interface_mqtt"]
     mqtt.title.value = "IMA Loading System"
@@ -78,21 +69,17 @@ def ima_loading() -> LoadingStation:
     output_url = f"{SCHEMA_BASE}/commandResponse.schema.json"
     resource.asset_interfaces_description.InterfaceTemplateForMQTT[
         "interface_mqtt"
-    ].InteractionMetadata.actions.property_name[name] = mqtt_action(
-        name, synchronous=False,
-        input_schema=load_schema(input_url), input_schema_url=input_url,
-        output_schema=load_schema(output_url), output_schema_url=output_url,
+    ].InteractionMetadata.actions.property_name[name] = MqttAction(
+        title=name,
+        synchronous="false",
+        input=datapoint_from_schema(load_schema(input_url), cls=DmpActionInput, schema_url=input_url),
+        output=datapoint_from_schema(load_schema(output_url), cls=DmpActionOutput, schema_url=output_url),
+        forms=MqttActionForm(href=f"CMD/{name}", mqv_qos="2", mqv_responseTopic=f"DATA/{name}"),
     )
     cci = resource.control_component_instance
     skill = ExtendedSkill(
-        id_short=name, interface_reference=ReferenceElement(
-            semantic_id=EXTENDED_SKILL_INTERFACE_REF, value=affordance_ref(MQTT_INTERFACE, "actions", name),
-        ),
+        interface_reference=affordance_ref(MQTT_INTERFACE, "actions", name),
         operation=SkillOperation(
-            id_short="operation", qualifiers=[
-                Qualifier(type_="invocationDelegation", value=INVOCATION_URL_TEMPLATE, value_type="xs:string", kind="ConceptQualifier"),
-                Qualifier(type_="Asynchronous", value="false", value_type="xs:string", kind="ConceptQualifier"),
-            ],
             in_output_variable=[Property(id_short="Uuid", description="The UUID of the command")],
             output_variable=[
                 Property(id_short="State", description="The state of the command being executed"),
@@ -101,19 +88,32 @@ def ima_loading() -> LoadingStation:
         ),
     )
     cci.Skills.Skill[name] = skill
-    cci.Endpoints.Endpoint[name] = SkillInterfaceRelationship(id_short=name, first=skill_ref(name), second=affordance_ref(MQTT_INTERFACE, "actions", name))
+    cci.Endpoints.Endpoint[name] = SkillInterfaceRelationship(
+        first=skill_ref(name), second=affordance_ref(MQTT_INTERFACE, "actions", name)
+    )
     resource.asset_interfaces_mapping_configuration.MappingConfigurations.value.append(
         AimcMappingConfiguration(
-            id_short=name, DefaultPollingInterval=DefaultPollingInterval(value="0.0"),
-            Sources=Sources(value=operation_sources(name, ["Uuid"])),
-            Sinks=Sinks(value=[SinksItem(id_short=name, Sink=Sink(value=action_member_ref(MQTT_INTERFACE, name, "input")), SinkId=SinkId(value=name))]),
-            Transformation=Transformation(value=(
+            id_short=name, DefaultPollingInterval="0.0",
+            Sources=[SourcesItem(SourceId="Uuid", Source=operation_variable_ref(name, "Uuid"))],
+            Sinks=[SinksItem(Sink=action_member_ref(MQTT_INTERFACE, name, "input"), SinkId=name)],
+            Transformation=(
                 f"function aimc_main(sources) return {{ {name} = {{ Uuid = sources.Uuid }} }} end"
-            )),
-            **command_reply(MQTT_INTERFACE, name, outputs=("Uuid", "State", "Outcome")),
+            ),
+            ResponseSources=[
+                DmpResponseSource(SourceId="Reply", Source=action_member_ref(MQTT_INTERFACE, name, "output")),
+            ],
+            ResponseTransformation=(
+                "function aimc_main(sources) local reply = sources.Reply "
+                "return { Uuid = reply.Uuid, State = reply.State, Outcome = reply.Outcome } end"
+            ),
+            ResponseSinks=[DmpResponseSink(SinkId=member, Sink=operation_variable_ref(name, member))
+                           for member in ("Uuid", "State", "Outcome")],
         ),
     )
     container = resource.capability_description.CapabilitySet["Handling"].CapabilityContainer[name]
-    container.CapabilityRelations = CapabilityRelations(id_short="CapabilityRelations", CapabilityRealizedBy={f"RealizedBy_{name}": CapabilityRealizedBy(id_short=f"RealizedBy_{name}", first=ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/CapabilityDescription"), Key(type_="SubmodelElementCollection", value="Handling"), Key(type_="SubmodelElementCollection", value=name), Key(type_="Capability", value="Capability"))), second=skill_ref(name))})
-    finalize_invocation_addresses(resource)
+    container.CapabilityRelations = CapabilityRelations(
+        CapabilityRealizedBy={
+            f"RealizedBy_{name}": CapabilityRealizedBy(first=capability_ref("Handling", name), second=skill_ref(name))
+        }
+    )
     return resource

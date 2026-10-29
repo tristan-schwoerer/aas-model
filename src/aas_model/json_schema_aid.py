@@ -51,10 +51,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import typing
+from pathlib import Path
 from typing import Any, Collection, Dict, Optional, Type
 from urllib.parse import urljoin, urlparse
+from urllib.request import urlopen
 
 from pydantic import BaseModel
 
@@ -62,11 +65,10 @@ from aas_pydantic import Property, Range
 
 from aas_pydantic.submodel_templates.asset_interfaces_description import (
     enum as _Enum,
-    forms as _Forms,
 )
-from aas_model.submodel_templates.aid import (
-    DmpItems, DmpOneOfBranch, DmpProperty, DmpSchemaProperties, Op, OneOf, Required,
-)
+from aas_model.submodel_templates.aid import DmpOneOfBranch, DmpProperty, Required
+from aas_model.constants import SCHEMA_BASE
+from aas_model.submodel_templates.aid.forms import PROTOCOL_PREFIXES
 
 # type keyword → the WoT value stored in ``type``
 _TYPE_MAP = {
@@ -172,9 +174,9 @@ def _set_range_if_bounds(container: Any, name: str, lo: Any, hi: Any) -> None:
         _set_range(_child(container, name, Range), lo, hi)
 
 
-def _required_default(cls: Type[Any]) -> Any:
-    """Construct *cls* filling mandatory (no-default) model fields with empty
-    instances of their declared type.
+def _required_default(cls: Type[Any], **fields: Any) -> Any:
+    """Construct *cls* from *fields*, filling the mandatory (no-default) model
+    fields not given with empty instances of their declared type.
 
     The generator emits required (One) children without a default so pydantic
     enforces that they are provided — a bare ``property_name`` therefore still
@@ -184,12 +186,12 @@ def _required_default(cls: Type[Any]) -> Any:
     schema says otherwise."""
     kwargs = {}
     for fname, field in cls.model_fields.items():
-        if not field.is_required():
+        if fname in fields or not field.is_required():
             continue
         target = _field_model_type_from_annotation(field.annotation)
         if target is not None:
             kwargs[fname] = _required_default(target)
-    return cls(**kwargs)
+    return cls(**kwargs, **fields)
 
 
 def _field_model_type_from_annotation(ann: Any) -> Optional[Type[Any]]:
@@ -244,7 +246,8 @@ def _safe_id_short(value: str, index: int) -> str:
 
 
 def _fill_enum(enum_sml: Any, values: list) -> None:
-    """Populate the ``enum`` SML (json-schema#enum) with Property items."""
+    """Populate the ``enum`` SML (json-schema#enum) with its item class's Properties."""
+    item_cls = getattr(type(enum_sml), "item_type", None) or Property
     seen = set()
     items = []
     for i, v in enumerate(values):
@@ -252,38 +255,8 @@ def _fill_enum(enum_sml: Any, values: list) -> None:
         while short in seen:
             short = f"{short}_{i}"
         seen.add(short)
-        items.append(Property(id_short=short, value=_to_str(v)))
+        items.append(item_cls(id_short=short, value=_to_str(v)))
     enum_sml.value = items
-
-
-
-def _fill_form(
-    forms: Any,
-    *,
-    href: Optional[str] = None,
-    op: Optional[str] = None,
-    content_type: Optional[str] = None,
-    subprotocol: Optional[str] = None,
-) -> None:
-    """Write the WoT form's transport binding into an existing form container.
-
-    ``href`` is the topic/URI the message comes from.  Fields are only set when
-    the form's class declares them (the generic ``forms`` template lacks
-    ``op`` — that lives on the ``DmpForm`` extension), so this composes
-    with both the generated form and a caller-supplied ``DmpForm``."""
-    for fname, value in (
-        ("href", href),
-        ("op", op),
-        ("contentType", content_type),
-        ("subprotocol", subprotocol),
-    ):
-        if value is None or fname not in type(forms).model_fields:
-            continue
-        if fname == "op":
-            forms.op = Op(value=[Property(value=value)])
-            continue
-        _child(forms, fname, Property).value = value
-
 
 
 
@@ -358,7 +331,6 @@ def dereference(schema: Dict[str, Any], base: str, loader, *, _depth: int = 0) -
 
 
 def _join_path(base: str, relative: str) -> str:
-    import os
     return os.path.normpath(os.path.join(os.path.dirname(base), relative))
 
 
@@ -430,11 +402,6 @@ def populate_datapoint(
     *,
     key: Optional[str] = None,
     schema_url: Optional[str] = None,
-    forms: Any = None,
-    href: Optional[str] = None,
-    op: Optional[str] = None,
-    content_type: Optional[str] = None,
-    subprotocol: Optional[str] = None,
     ignore: Collection[str] = (),
     path: str = "$",
 ) -> None:
@@ -443,9 +410,11 @@ def populate_datapoint(
     Schema dict.
 
     Only the fields the schema describes are touched — fields the caller
-    already set (``forms``, ``key``, …) are left alone, so this composes with
-    the MQTT/resource builders. A keyword without an AID representation raises
-    ``ValueError`` unless it is in ``ignore`` (applied at every depth).
+    already set (``forms``, ``key``, …) are left alone. A keyword naming a
+    binding term of the datapoint's class (e.g. ``uav_eventField`` on an OPC UA
+    event field) sets that term. Any other keyword without an AID
+    representation raises ``ValueError`` unless it is in ``ignore`` (applied at
+    every depth).
 
     ``schema_url`` (the JSON Schema URL the datapoint was built from) is
     recorded as a supplemental semantic id on the datapoint — the schema URL
@@ -453,9 +422,14 @@ def populate_datapoint(
     """
     ignore = frozenset(ignore)
     schema = {k: v for k, v in schema.items() if k not in ignore and k not in _ANNOTATIONS}
+    terms = {keyword: schema.pop(keyword) for keyword in list(schema)
+             if keyword not in _SUPPORTED and keyword.startswith(PROTOCOL_PREFIXES)
+             and keyword in type(dp).model_fields}
     for keyword in schema:
         if keyword not in _SUPPORTED:
             raise _unrepresentable(path, keyword)
+    for keyword, value in terms.items():
+        _child(dp, keyword, Property).value = _to_str(value)
     if isinstance(schema.get("type"), list):
         schema = _rewrite_type_union(schema, path)
     if "prefixItems" in schema:
@@ -492,24 +466,6 @@ def populate_datapoint(
         _child(dp, "unit", Property).value = _to_str(schema["unit"])
     if schema.get("enum"):
         _fill_enum(_child(dp, "enum", _Enum), schema["enum"])
-
-    # ``forms`` is mandatory on a property affordance. The schema itself
-    # carries no form info — the caller supplies the transport binding:
-    # either a ready ``forms`` instance (e.g. ``DmpForm``) or the WoT form
-    # fields (``href`` = the topic the message comes from, ``op``,
-    # ``content_type``, ``subprotocol``). An already-set forms (MQTT builders)
-    # is left alone unless the caller passes explicit form fields.
-    if "forms" in type(dp).model_fields:
-        if forms is not None:
-            f = forms
-            setattr(dp, "forms", f)
-        else:
-            f = getattr(dp, "forms", None)
-            if f is None:
-                f = _child(dp, "forms", _Forms)
-                setattr(dp, "forms", f)
-        _fill_form(f, href=href, op=op,
-                   content_type=content_type, subprotocol=subprotocol)
 
     # numeric / string / array bounds — Ranges appear only when bounded
     _set_range_if_bounds(dp, "min_max", schema.get("minimum"), schema.get("maximum"))
@@ -579,32 +535,25 @@ def datapoint_from_schema(
     key: Optional[str] = None,
     cls: Type[Any] = DmpProperty,
     schema_url: Optional[str] = None,
-    forms: Any = None,
-    href: Optional[str] = None,
-    op: Optional[str] = None,
-    content_type: Optional[str] = None,
-    subprotocol: Optional[str] = None,
     ignore: Collection[str] = (),
+    **fields: Any,
 ) -> Any:
-    """Build a new data schema instance from a dereferenced JSON Schema dict.
+    """A ``cls`` built from a dereferenced JSON Schema dict: its data schema terms from ``schema``, its other fields
+    (``title``, ``forms``, ``observable``, …) from ``fields`` as the class's own constructor takes them.
 
     ``cls`` defaults to a property affordance (``DmpProperty``); pass e.g.
     ``DmpActionInput``/``DmpActionOutput`` or an event payload class. Nested
     members, ``items`` and ``oneOf`` branches take the classes their parent
-    declares. Mandatory children (e.g. a property's ``forms``) are constructed
-    so the datapoint is always a valid instance; pass the WoT form fields
-    (``href``, ``op``, ``content_type``, ``subprotocol``) or a ready
-    ``forms``. ``ignore`` names keywords to drop instead of failing on them.
+    declares. Mandatory children not given (e.g. a property's ``forms``) are
+    constructed, so the datapoint is always a valid instance. ``key`` names it
+    (its idShort and AID ``key``); ``ignore`` names keywords to drop instead of
+    failing on them.
 
     ``schema_url`` (the JSON Schema URL) is recorded as a supplemental
     semantic id on the built datapoint.
     """
-    dp = _required_default(cls)
-    populate_datapoint(
-        dp, schema, key=key, schema_url=schema_url,
-        forms=forms, href=href, op=op,
-        content_type=content_type, subprotocol=subprotocol, ignore=ignore,
-    )
+    dp = _required_default(cls, **fields)
+    populate_datapoint(dp, schema, key=key, schema_url=schema_url, ignore=ignore)
     return dp
 
 
@@ -722,12 +671,35 @@ def without(schema: Any, *keywords: str) -> Any:
             for key, value in schema.items() if key not in keywords}
 
 
+def _schema_dir() -> Path:
+    """The vendored schemas: ``MQTT_SCHEMAS_DIR``, or the ``MQTTSchemas`` of an aas-model checkout."""
+    return Path(os.environ.get("MQTT_SCHEMAS_DIR") or Path(__file__).resolve().parents[2] / "MQTTSchemas")
+
+
+def _read_schema(ref: str) -> Dict[str, Any]:
+    """One schema document by URL or path. A published schema (``SCHEMA_BASE``) is read from the vendored copy
+    and fetched only when that has no such file; a relative path is relative to the vendored schemas."""
+    if urlparse(ref).scheme in ("http", "https"):
+        if ref.startswith(f"{SCHEMA_BASE}/"):
+            local = _schema_dir() / ref.removeprefix(f"{SCHEMA_BASE}/")
+            if local.is_file():
+                return json.loads(local.read_text(encoding="utf-8"))
+        with urlopen(ref, timeout=5) as response:
+            return json.load(response)
+    path = Path(ref) if Path(ref).is_absolute() else _schema_dir() / ref
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def load_schema(schema_url: str) -> Dict[str, Any]:
     """Load and dereference a JSON Schema (URL or path) into one dict: every
-    ``$ref`` inlined (github.io URLs map to the vendored ``MQTTSchemas``),
+    ``$ref`` inlined (published schemas are read from the vendored ``MQTTSchemas``),
     ``allOf`` merged, ``oneOf`` kept. Pass the result to
     :func:`datapoint_from_schema` / :func:`populate_datapoint`."""
-    from aas_model.schema_parser import SchemaParser  # lazy: schema_parser imports requests
+    documents: Dict[str, Any] = {}
 
-    parser = SchemaParser()
-    return dereference(parser._load_schema(schema_url), schema_url, parser._load_schema)
+    def read(ref: str) -> Dict[str, Any]:
+        if ref not in documents:
+            documents[ref] = _read_schema(ref)
+        return documents[ref]
+
+    return dereference(read(schema_url), schema_url, read)

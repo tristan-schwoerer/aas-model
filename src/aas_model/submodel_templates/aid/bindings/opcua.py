@@ -3,14 +3,15 @@ vocabulary; the ``uav_event*`` terms are this project's)."""
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, Optional
+from typing import Dict, Optional
 
 from pydantic import model_validator
 
 from aas_pydantic import Property
 from aas_pydantic.aas_model import AasIdString
 from aas_pydantic.submodel_templates.asset_interfaces_description import (
-    EndpointMetadata_t, InterfaceTemplateForOPCUA as _BaseOpcuaInterface, Title,
+    EndpointMetadata_OPCUA, InterfaceTemplateForOPCUA as _BaseOpcuaInterface, Title, forms_OPCUA,
+    securityDefinitions_OPCUA,
 )
 
 from aas_model.constants import AID_OPCUA_COMPONENT_OF, AID_OPCUA_EVENT_FIELD, AID_OPCUA_EVENT_TYPE
@@ -18,7 +19,7 @@ from aas_model.submodel_templates.aid.affordances import (
     DmpAction, DmpActions, DmpEvent, DmpEventData, DmpEvents, DmpInteractionMetadata,
 )
 from aas_model.submodel_templates.aid.data_schema import DmpDataSchema, DmpSchemaProperties
-from aas_model.submodel_templates.aid.forms import DmpActionForm
+from aas_model.submodel_templates.aid.forms import DmpActionForm, DmpForm
 from aas_model.submodel_templates.aid.interface import DmpEndpointMetadata
 
 
@@ -33,9 +34,18 @@ class UavComponentOf(Property):
     description: str = "NodeId of the UA Object the method is defined in (the objectId of the UA Call service)."
 
 
-class OpcuaActionForm(DmpActionForm):
-    """OPC UA action form; permits OPC UA binding fields, not other protocols."""
-    protocol: ClassVar[Optional[str]] = "uav"
+class OpcuaForm(DmpForm, forms_OPCUA):
+    """The form of an OPC UA variable or event: ``href`` is ``/?id=<NodeId>``."""
+
+
+class OpcuaActionForm(DmpActionForm, forms_OPCUA):
+    """The form of an OPC UA Method."""
+
+
+class DmpOpcuaEndpointMetadata(DmpEndpointMetadata, EndpointMetadata_OPCUA):
+    """OPC UA endpoint metadata: its security definitions include the OPC UA channel and authentication
+    schemes."""
+    securityDefinitions: securityDefinitions_OPCUA = securityDefinitions_OPCUA()
 
 
 class OpcuaAction(DmpAction):
@@ -120,5 +130,5 @@ class OpcuaInteractionMetadata(DmpInteractionMetadata):
 
 class DmpOpcuaInterface(_BaseOpcuaInterface):
     title: Title = Title()
-    EndpointMetadata: EndpointMetadata_t = DmpEndpointMetadata()
+    EndpointMetadata: DmpOpcuaEndpointMetadata = DmpOpcuaEndpointMetadata()
     InteractionMetadata: OpcuaInteractionMetadata = OpcuaInteractionMetadata()

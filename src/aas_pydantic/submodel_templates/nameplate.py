@@ -4,9 +4,9 @@ Source: Digital nameplate/3/0/2/IDTA 02006-3-0-2_Template_Digital Nameplate.json
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, List, Dict, Optional, TypeAlias
+from typing import ClassVar, Dict, List, Optional, TypeAlias
 from aas_pydantic import (
-    File, MultiLanguageProperty, Property, Submodel, SubmodelElement, SubmodelElementCollection, SubmodelElementList,
+    File, MultiLanguageProperty, Property, Submodel, SubmodelElementCollection, SubmodelElementList,
 )
 from aas_pydantic.aas_model import AasIdString
 
@@ -196,6 +196,7 @@ class Markings(SubmodelElementList):
     description: str = "Note: CE marking is declared as mandatory according to EU Blue Guide"
     supplemental_semantic_ids: List[str] = ["0173-1#02-ABI563#003/0173-1#01-AHF849#003"]
     type_value_list_element: str = "SubmodelElementCollection"
+    ITEM_CARDINALITY: ClassVar[str] = 'OneToMany'
     item_type: ClassVar = MarkingsItem
     value: List[MarkingsItem] = []
 
@@ -238,6 +239,7 @@ class GuidelineSpecificProperties(SubmodelElementList):
     id_short: AasIdString = "GuidelineSpecificProperties"
     semantic_id: str = "0173-1#02-ABI219#003/0173-1#01-AHD205#004"
     type_value_list_element: str = "SubmodelElementCollection"
+    ITEM_CARDINALITY: ClassVar[str] = 'OneToMany'
     item_type: ClassVar = GuidelineSpecificPropertiesItem
     value: List[GuidelineSpecificPropertiesItem] = []
 

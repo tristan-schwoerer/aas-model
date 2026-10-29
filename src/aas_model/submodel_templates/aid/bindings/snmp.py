@@ -4,12 +4,12 @@ generated template carries none."""
 
 from __future__ import annotations
 
-from typing import ClassVar, Dict, Optional
+from typing import Dict, Optional
 
 from aas_pydantic import Property
 from aas_pydantic.aas_model import AasIdString
 from aas_pydantic.submodel_templates.asset_interfaces_description import (
-    EndpointMetadata_t, InterfaceTemplateForSNMP as _BaseSnmpInterface, Title,
+    EndpointMetadata_t, InterfaceTemplateForSNMP as _BaseSnmpInterface, Title, forms_SNMP,
 )
 
 from aas_model.submodel_templates.aid.affordances import DmpInteractionMetadata, DmpProperties, DmpProperty
@@ -33,10 +33,9 @@ class SnmpvVersion(Property):
     description: str = "SNMP protocol version of the interaction: snmpv:SNMPv1 or snmpv:SNMPv2c (default)."
 
 
-class SnmpForm(DmpForm):
+class SnmpForm(DmpForm, forms_SNMP):
     """The form of an SNMP property: one OID (``href``) and its PDU type and
     protocol version."""
-    protocol: ClassVar[Optional[str]] = "snmpv"
     snmpv_pduType: Optional[SnmpvPduType] = None
     snmpv_version: Optional[SnmpvVersion] = None
 

@@ -44,17 +44,17 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import ClassVar, Dict, List, Literal, Optional, Union
+from typing import ClassVar, Dict, List, Literal, Optional, TypeAlias, Union
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 
 from aas_pydantic import (
-    File, ModelReference, MultiLanguageProperty, Property, Range, ReferenceElement, SubmodelElementCollection,
+    File, MultiLanguageProperty, Property, Range, ReferenceElement, SubmodelElementCollection,
 )
 from aas_pydantic.aas_model import AasIdString
 from aas_pydantic.submodel_templates.time_series import (
-    EndTime, Endpoint, LinkedSegment as _LinkedSegment, Metadata as _Metadata, Name,
-    Query, Segments as _Segments, StartTime, State,
+    Endpoint, Endpoint_t, LinkedSegment as _LinkedSegment, Metadata as _Metadata, Query, Segments as _Segments, State,
+    TimeSeries as _TimeSeries, InternalSegment as _InternalSegment, Records as _Records,
 )
 
 from aas_model.constants import (
@@ -106,6 +106,13 @@ class RecordText(MultiLanguageProperty):
     Its value declares the languages, each with the field's label in it."""
     semantic_id: str = TS_RECORD_TEXT
 
+    @field_validator("value")
+    @classmethod
+    def _declares_its_languages(cls, value):
+        if not value or any(not language or not label for language, label in value.items()):
+            raise ValueError("a Record text declares at least one language, each with a label")
+        return value
+
 
 class RecordGroup(SubmodelElementCollection):
     """Fields that belong together within a row (``Position.X``)."""
@@ -143,25 +150,55 @@ class TimeSeriesMetadata(_Metadata):
 
 # ── LinkedSegment write target (DMP extension) ───────────────────────────────
 
+def _check_identifier(kind: str, value: str) -> str:
+    if not _IDENTIFIER.match(value):
+        raise ValueError(f"{kind} {value!r} must match {_IDENTIFIER.pattern}")
+    return value
+
+
 class Bucket(Property):
+    """The InfluxDB bucket; by default the workspace's."""
     id_short: AasIdString = "Bucket"
     semantic_id: str = TS_INFLUX_TARGET_BUCKET
+    value: str = INFLUX_BUCKET
+
+    @field_validator("value")
+    @classmethod
+    def _is_an_identifier(cls, value):
+        return _check_identifier("bucket", value)
 
 
 class Measurement(Property):
     id_short: AasIdString = "Measurement"
     semantic_id: str = TS_INFLUX_TARGET_MEASUREMENT
 
+    @field_validator("value")
+    @classmethod
+    def _is_an_identifier(cls, value):
+        return _check_identifier("measurement", value)
+
 
 class Tag(Property):
     """One series tag: the idShort is the tag key, the value its value."""
     semantic_id: str = TS_INFLUX_TARGET_TAG
+
+    @field_validator("value")
+    @classmethod
+    def _is_an_identifier(cls, value):
+        return _check_identifier("tag value", value)
 
 
 class Tags(SubmodelElementCollection):
     id_short: AasIdString = "Tags"
     semantic_id: str = TS_INFLUX_TARGET_TAGS
     tag: Dict[str, Tag] = {}
+
+    @field_validator("tag")
+    @classmethod
+    def _keys_are_identifiers(cls, tag):
+        for key in tag:
+            _check_identifier("tag key", key)
+        return tag
 
 
 WriteModeValue = Literal["Synchronous", "Asynchronous"]
@@ -176,6 +213,11 @@ class TargetWriteMode(Property):
     value: WriteModeValue = "Synchronous"
 
 
+# Aliases, so a field can carry the name of its class and a default (as in the generated templates).
+Bucket_t: TypeAlias = Bucket
+Tags_t: TypeAlias = Tags
+
+
 class InfluxDb2Target(SubmodelElementCollection):
     """Where the DMP writes and reads the segment's points on InfluxDB 2. Each
     database has its own target, told apart by semanticId; a segment carries
@@ -183,80 +225,16 @@ class InfluxDb2Target(SubmodelElementCollection):
     parses it."""
     id_short: AasIdString = "InfluxDb2Target"
     semantic_id: str = TS_INFLUX_TARGET
-    Bucket: Bucket
+    Bucket: Bucket_t = Bucket()
     Measurement: Measurement
-    Tags: Tags
+    # The series names the AAS that owns it (``{aas_id_short}``, resolved when the resource is built).
+    Tags: Tags_t = Tags(tag={"asset": Tag(value="{aas_id_short}")})
     WriteMode: Optional[TargetWriteMode] = None
 
 
-class DmpLinkedSegment(_LinkedSegment):
-    InfluxDb2Target: InfluxDb2Target
-
-
-class TimeSeriesSegments(_Segments):
-    LinkedSegment: Dict[str, DmpLinkedSegment] = {}
-
-
-class TimeSeriesCollection(SubmodelElementCollection):
-    semantic_id: str = TS_COLLECTION
-    supplemental_semantic_ids: List[str] = [IDTA_TIME_SERIES]
-    Metadata: TimeSeriesMetadata
-    Segments: TimeSeriesSegments
-
-
-RecordGroup.model_rebuild()
-TimeSeriesRecord.model_rebuild()
-
-
-# ── Authoring helpers ────────────────────────────────────────────────────────
-
-def record_field(value_type: str, *, concept: str = "", description: str = "") -> RecordField:
-    """A Record field; its InfluxDB field is its idShortPath below the Record."""
-    return RecordField(
-        value_type=value_type, description=description,
-        supplemental_semantic_ids=[concept] if concept else [],
-    )
-
-
-def record_range(value_type: str, *, concept: str = "", description: str = "") -> RecordRange:
-    """A Record range: the fields ``<path>.min`` and ``<path>.max``."""
-    return RecordRange(value_type=value_type, description=description,
-                       supplemental_semantic_ids=[concept] if concept else [])
-
-
-def record_file(content_type: str, *, concept: str = "", description: str = "") -> RecordFile:
-    """A Record file: one string field, the path or URL of a file of *content_type*."""
-    return RecordFile(content_type=content_type, description=description,
-                      supplemental_semantic_ids=[concept] if concept else [])
-
-
-def record_text(labels: Dict[str, str], *, concept: str = "", description: str = "") -> RecordText:
-    """A Record text in the languages of *labels* (language → the field's label
-    in it): one string field per language, ``<path>.<language>``."""
-    if not labels or any(not language or not label for language, label in labels.items()):
-        raise ValueError("a Record text declares at least one language, each with a label")
-    return RecordText(value=dict(labels), description=description,
-                      supplemental_semantic_ids=[concept] if concept else [])
-
-
-def record_group(fields: Dict[str, RecordEntry], *, description: str = "") -> RecordGroup:
-    return RecordGroup(field=fields, description=description)
-
-
-def record_reference(reference: ModelReference, *, description: str = "") -> RecordReference:
-    """The referenced element's structure at this place of the row."""
-    return RecordReference(value=reference, description=description)
-
-
-def _check_identifier(kind: str, value: str) -> str:
-    if not _IDENTIFIER.match(value):
-        raise ValueError(f"{kind} {value!r} must match {_IDENTIFIER.pattern}")
-    return value
-
-
-def flux_query(bucket: str, measurement: str, tags: Dict[str, str]) -> str:
-    """The segment's Query: its points in the web UI's time range, one field
-    per selected Record field (``{{y-value}}``, substituted by the UI)."""
+def _flux_query(bucket: str, measurement: str, tags: Dict[str, str]) -> str:
+    """A segment's Query: its points in the web UI's time range, one field per selected Record field
+    (``{{y-value}}``, substituted by the UI)."""
     lines = [
         f'from(bucket: "{bucket}")',
         "  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)",
@@ -280,71 +258,60 @@ def _check_time(kind: str, value: Optional[str]) -> Optional[str]:
     return value
 
 
-def linked_segment(*, measurement: str, tags: Dict[str, str],
-                   bucket: str = INFLUX_BUCKET, description: str = "",
-                   start_time: Optional[str] = None, end_time: Optional[str] = None,
-                   write_mode: Optional[WriteModeValue] = None) -> DmpLinkedSegment:
-    """A segment on the workspace's InfluxDB. Its *start_time* and *end_time*
-    bound what the DMP reads; a segment with an *end_time* is ``Completed`` and
-    read-only, one without is ``InProgress`` and open for writes. *write_mode*
-    is authored only when given; absent, the DMP writes synchronously."""
-    _check_time("start_time", start_time)
-    _check_time("end_time", end_time)
-    if start_time and end_time and datetime.fromisoformat(end_time) <= datetime.fromisoformat(start_time):
-        raise ValueError("end_time must lie after start_time")
-    _check_identifier("bucket", bucket)
-    _check_identifier("measurement", measurement)
-    for key, value in tags.items():
-        _check_identifier("tag key", key)
-        _check_identifier("tag value", value)
-    return DmpLinkedSegment(
-        description=description,
-        StartTime=StartTime(value=start_time) if start_time else None,
-        EndTime=EndTime(value=end_time) if end_time else None,
-        State=State(value="Completed" if end_time else "InProgress"),
-        Endpoint=Endpoint(value=f"{INFLUX_ORIGIN}/api/v2/query?org={INFLUX_ORG}"),
-        Query=Query(value=flux_query(bucket, measurement, tags)),
-        InfluxDb2Target=InfluxDb2Target(
-            Bucket=Bucket(value=bucket),
-            Measurement=Measurement(value=measurement),
-            Tags=Tags(tag={key: Tag(value=value) for key, value in tags.items()}),
-            WriteMode=TargetWriteMode(value=write_mode) if write_mode else None,
-        ),
-    )
+class DmpLinkedSegment(_LinkedSegment):
+    """A segment on the workspace's InfluxDB 2. Its StartTime and EndTime bound what the DMP reads: a segment
+    with an EndTime is ``Completed`` and read-only, one without is ``InProgress`` and open for writes. The
+    Query (for the web UI) and the State follow from the target and the times unless authored."""
+    Endpoint: Endpoint_t = Endpoint(value=f"{INFLUX_ORIGIN}/api/v2/query?org={INFLUX_ORG}")
+    InfluxDb2Target: InfluxDb2Target
+
+    @model_validator(mode="before")
+    @classmethod
+    def _query_from_the_target(cls, data):
+        target = data.get("InfluxDb2Target") if isinstance(data, dict) else None
+        if isinstance(target, InfluxDb2Target) and "Query" not in data:
+            tags = {key: tag.value for key, tag in target.Tags.tag.items()}
+            data = {**data, "Query": Query(value=_flux_query(target.Bucket.value, target.Measurement.value, tags))}
+        return data
+
+    @model_validator(mode="after")
+    def _times_and_state(self):
+        start = _check_time("StartTime", self.StartTime.value if self.StartTime else None)
+        end = _check_time("EndTime", self.EndTime.value if self.EndTime else None)
+        if start and end and datetime.fromisoformat(end) <= datetime.fromisoformat(start):
+            raise ValueError("EndTime must lie after StartTime")
+        if self.State is None:
+            self.State = State(value="Completed" if end else "InProgress")
+        return self
 
 
-def time_series(*, name: str, measurement: str, fields: Dict[str, RecordEntry],
-                tags: Optional[Dict[str, str]] = None, description: str = "",
-                segment: str = "Live", start_time: Optional[str] = None,
-                end_time: Optional[str] = None,
-                write_mode: Optional[WriteModeValue] = None) -> TimeSeriesCollection:
-    """A series with one LinkedSegment. *tags* default to the owning AAS."""
-    tags = {"asset": "{aas_id_short}"} if tags is None else tags
-    return TimeSeriesCollection(
-        description=description,
-        Metadata=TimeSeriesMetadata(
-            Name=Name(value={"en": name}),
-            Record=TimeSeriesRecord(field=fields),
-        ),
-        Segments=TimeSeriesSegments(LinkedSegment={
-            segment: linked_segment(measurement=measurement, tags=tags,
-                                    start_time=start_time, end_time=end_time,
-                                    write_mode=write_mode),
-        }),
-    )
+class TimeSeriesRecords(_Records):
+    """The rows of an InternalSegment, each a record of the profile."""
+    Record: Dict[str, TimeSeriesRecord] = {}
 
 
+class TimeSeriesInternalSegment(_InternalSegment):
+    Records: TimeSeriesRecords
 
-def operation_log(operation: ModelReference, *, name: str, measurement: str,
-                  field: str = "Operation") -> TimeSeriesCollection:
-    """A log series of one Operation: its outcome and duration next to the
-    Operation itself, referenced, so its input, InOut and output variables are
-    fields (``Operation.Uuid``) with their valueTypes and follow its definition."""
-    fields: Dict[str, RecordEntry] = {
-        "Outcome": record_field("xs:string", description="How the invocation ended"),
-        "DurationMs": record_field("xs:long", description="Time from accepting the call to its answer"),
-    }
-    if field in fields:
-        raise ValueError(f"the Operation's field {field!r} clashes with a log field")
-    fields[field] = record_reference(operation, description="The invoked Operation's variables")
-    return time_series(name=name, measurement=measurement, fields=fields)
+
+class TimeSeriesSegments(_Segments):
+    LinkedSegment: Dict[str, DmpLinkedSegment] = {}
+    InternalSegment: Dict[str, TimeSeriesInternalSegment] = {}
+
+
+class TimeSeriesCollection(SubmodelElementCollection):
+    semantic_id: str = TS_COLLECTION
+    supplemental_semantic_ids: List[str] = [IDTA_TIME_SERIES]
+    Metadata: TimeSeriesMetadata
+    Segments: TimeSeriesSegments
+
+
+class TimeSeriesSubmodel(_TimeSeries):
+    """The profile as the IDTA 02008 submodel: a series of its own rather than one in Variables (and the class its
+    template is exported from)."""
+    Metadata: TimeSeriesMetadata
+    Segments: TimeSeriesSegments
+
+
+RecordGroup.model_rebuild()
+TimeSeriesRecord.model_rebuild()

@@ -1,13 +1,13 @@
 """Forms: the AID form plus the WoT terms AID leaves out — ``op``, the
 action's ``response`` and ``additionalResponses`` (docs/aid-extension.md
-§3.4). Protocol-specific form terms live in the bindings."""
+§3.4). Each binding's form adds its protocol's terms (the generated
+``forms_<Protocol>``, e.g. ``bindings.mqtt.MqttForm``)."""
 
 from __future__ import annotations
 
 import warnings
 from typing import ClassVar, List, Optional
 
-from pydantic import model_validator
 
 from aas_pydantic import Property, SubmodelElementCollection, SubmodelElementList
 from aas_pydantic.aas_model import AasIdString
@@ -78,26 +78,11 @@ class AdditionalResponses(SubmodelElementList):
 
 
 class DmpForm(_BaseForm):
-    """The AID form plus the optional WoT ``op`` and ``additionalResponses``.
-
-    The generated AID form carries every protocol's binding terms. A binding's
-    form class sets ``protocol`` (its prefix, e.g. ``mqv``); such a form then
-    refuses the terms of other protocols."""
-    protocol: ClassVar[Optional[str]] = None
+    """The AID form every protocol shares plus the optional WoT ``op`` and ``additionalResponses``; a binding's
+    form adds its protocol's terms."""
     href: Href = Href()
     op: Optional[Op] = None
     additionalResponses: Optional[AdditionalResponses] = None
-
-    @model_validator(mode="after")
-    def _only_own_protocol_terms(self):
-        if self.protocol is None:
-            return self
-        foreign = [name for name in type(self).model_fields
-                   if name.startswith(PROTOCOL_PREFIXES) and not name.startswith(f"{self.protocol}_")
-                   and getattr(self, name) is not None]
-        if foreign:
-            raise ValueError(f"{type(self).__name__} cannot use foreign protocol fields: {', '.join(foreign)}")
-        return self
 
 
 class DmpResponseForm(SubmodelElementCollection):

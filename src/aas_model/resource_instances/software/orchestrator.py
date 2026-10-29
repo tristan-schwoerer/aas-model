@@ -1,45 +1,35 @@
 """AAU orchestrator instance, including its native HTTP API."""
 
-from aas_pydantic import (
-    Capability, ExternalReference, Key, ModelReference, Property, Qualifier,
-)
+from aas_pydantic import Capability, Property
 from aas_pydantic.submodel_templates.asset_interfaces_description import (
-    Base, ContentType, EndpointMetadata, Href, HtvMethodName,
-    Key as AIDKey, Title as AIDTitle, security_t, securityDefinitions,
+    Base, ContentType, EndpointMetadata, Href, HtvMethodName, Key as AIDKey, Title, Title as AIDTitle,
+    securityDefinitions, security_t,
 )
 from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import (
     Source as SourceReference, Sink as SinkReference, SourcesItem, SinksItem,
-    Sources, Sinks, SourceId, SinkId, DefaultPollingInterval,
 )
 from aas_pydantic.submodel_templates.capability_description import (
     CapabilityContainer, CapabilitySet, CapabilityRelations, CapabilityRealizedBy,
 )
 
-from aas_model.constants import CSSX, SCHEMA_BASE
 from aas_model.json_schema_aid import datapoint_from_schema, load_schema, populate_datapoint
-from aas_model.constants import BASE_URL, BROKER, SITE
+from aas_model.constants import BASE_URL, BROKER, CSSX, SCHEMA_BASE, SITE, STATE_OPERATIONAL
 from aas_model.resource_instances.site import SITE_ADDRESS
-from aas_pydantic.submodel_templates.nameplate import (
-    Nameplate, URIOfTheProduct, ManufacturerName, ManufacturerProductDesignation,
-    ManufacturerProductType, OrderCodeOfManufacturer, SerialNumber,
-    YearOfConstruction, CountryOfOrigin,
+from aas_pydantic.submodel_templates.nameplate import Nameplate, ManufacturerName, ManufacturerProductDesignation
+from aas_model.resource_template.resources import MqttSoftwareResource
+from aas_model.resource_template.operational import COMMAND_RESPONSE_SCHEMA, COMMAND_RESPONSE_SCHEMA_URL
+from aas_model.resource_template.references import (
+    MQTT_INTERFACE, action_member_ref, affordance_ref, capability_ref, operation_variable_ref, skill_ref, variable_ref,
 )
-from aas_model.resource_template.software import MqttSoftwareResource
-from aas_model.resource_template.asset_interfaces_description import MQTT_INTERFACE, affordance_ref, mqtt_action, mqtt_property
 from aas_model.submodel_templates.control_component_instance import (
     ExtendedSkill, SkillOperation, SkillInterfaceRelationship,
 )
 from aas_model.submodel_templates.variables import VariableProp
+from aas_model.submodel_templates import DmpResponseSink, DmpResponseSource
 from aas_model.submodel_templates.aimc import DmpMappingConfiguration
-from aas_model.submodel_templates import Transformation
-from aas_model.resource_template.asset_interfaces_mapping_configuration import (
-    variable_ref, operation_sources,
-)
-from aas_model.invocation_authoring import finalize_invocation_addresses
-from aas_model.resource_template.control_component_instance import skill_ref
-from aas_model.resource_template.operational import action_member_ref, command_reply
 from aas_model.submodel_templates.aid import (
-    DmpAction, DmpActionInput, DmpActionOutput, DmpActions, DmpForm, DmpHttpInterface,
+    DmpAction, DmpActionInput, DmpActionOutput, DmpActions, DmpHttpInterface, HttpActionForm, HttpForm, MqttAction,
+    MqttActionForm, MqttForm,
 )
 try:
     from aas_model.submodel_templates.aid import DmpProperties, DmpProperty, ReadOnly, Synchronous
@@ -50,7 +40,6 @@ except ImportError:
     )
     ReadOnly = None
     Synchronous = Property
-from aas_model.constants import INVOCATION_URL_TEMPLATE
 
 
 def orchestrator() -> MqttSoftwareResource:
@@ -60,14 +49,14 @@ def orchestrator() -> MqttSoftwareResource:
         id_short=identity, id=f"{BASE_URL}/aas/{identity}",
         asset_type=f"{CSSX}#Orchestrator", specific_asset_ids={"serialNumber": serial},
         nameplate=Nameplate(
-            id_short="Nameplate", URIOfTheProduct=URIOfTheProduct(value=f"{BASE_URL}/aas/{identity}"),
+            URIOfTheProduct=f"{BASE_URL}/aas/{identity}",
             ManufacturerName=ManufacturerName(value={"en": "Aalborg University"}),
             ManufacturerProductDesignation=ManufacturerProductDesignation(value={"en": "AAU Orchestrator"}),
-            ManufacturerProductType=ManufacturerProductType(value="AAU Orchestrator"),
+            ManufacturerProductType="AAU Orchestrator",
             AddressInformation=SITE_ADDRESS.model_copy(deep=True),
-            OrderCodeOfManufacturer=OrderCodeOfManufacturer(value=serial),
-            SerialNumber=SerialNumber(value=serial), YearOfConstruction=YearOfConstruction(value="2024"),
-            CountryOfOrigin=CountryOfOrigin(value="DK"),
+            OrderCodeOfManufacturer=serial,
+            SerialNumber=serial, YearOfConstruction="2024",
+            CountryOfOrigin="DK",
         ),
     )
     aid = resource.asset_interfaces_description
@@ -81,27 +70,38 @@ def orchestrator() -> MqttSoftwareResource:
         input_url = f"{SCHEMA_BASE}/orchestrationCommand.schema.json" if name in (
             "Start", "Unsuspend",
         ) else f"{SCHEMA_BASE}/command.schema.json"
-        action = mqtt_action(name, synchronous=True, input_schema=load_schema(input_url), input_schema_url=input_url)
+        action = MqttAction(
+            title=name,
+            synchronous="true",
+            input=datapoint_from_schema(load_schema(input_url), cls=DmpActionInput, schema_url=input_url),
+            output=datapoint_from_schema(
+                COMMAND_RESPONSE_SCHEMA, cls=DmpActionOutput, schema_url=COMMAND_RESPONSE_SCHEMA_URL
+            ),
+            forms=MqttActionForm(href=f"CMD/{name}", mqv_qos="2", mqv_responseTopic=f"DATA/{name}"),
+        )
         interaction.actions.property_name[name] = action
-        skill = ExtendedSkill(id_short=name)
-        skill.Disabled.value = "false"
-        skill.interface_reference.value = ModelReference(key=(
-            Key(type_="Submodel", value="{aas_id}/submodels/AssetInterfacesDescription"),
-            Key(type_="SubmodelElementCollection", value="interface_mqtt"),
-            Key(type_="SubmodelElementCollection", value="InteractionMetadata"),
-            Key(type_="SubmodelElementCollection", value="actions"),
-            Key(type_="SubmodelElementCollection", value=name),
-        ))
-        skill.operation = SkillOperation(id_short="operation", qualifiers=[
-            Qualifier(type_="invocationDelegation", value=INVOCATION_URL_TEMPLATE, value_type="xs:string", kind="ConceptQualifier"),
-            Qualifier(type_="Synchronous", value="true", value_type="xs:string", kind="ConceptQualifier"),
-        ], in_output_variable=[Property(id_short="Uuid", description="The UUID of the command")], output_variable=[Property(id_short="State", description="The state of the command being executed")])
+        skill = ExtendedSkill(
+            Disabled="false", interface_reference=affordance_ref(MQTT_INTERFACE, "actions", name)
+        )
+        skill.operation = SkillOperation(
+            in_output_variable=[Property(id_short="Uuid", description="The UUID of the command")],
+            output_variable=[Property(id_short="State", description="The state of the command being executed")],
+        )
         mapping = DmpMappingConfiguration(
-            id_short=name, DefaultPollingInterval=DefaultPollingInterval(value="0.0"),
-            Transformation=Transformation(value=f"function aimc_main(sources) return {{ {name} = {{ Uuid = sources.Uuid }} }} end"),
-            Sources=Sources(value=operation_sources(name, ["Uuid", "Process"] if name in ("Start", "Unsuspend") else ["Uuid"])),
-            Sinks=Sinks(value=[SinksItem(id_short=name, Sink=SinkReference(value=action_member_ref(MQTT_INTERFACE, name, "input")), SinkId=SinkId(value=name))]),
-            **command_reply(MQTT_INTERFACE, name),
+            id_short=name, DefaultPollingInterval="0.0",
+            Transformation=f"function aimc_main(sources) return {{ {name} = {{ Uuid = sources.Uuid }} }} end",
+            Sources=[SourcesItem(SourceId=variable, Source=operation_variable_ref(name, variable))
+                     for variable in (("Uuid", "Process") if name in ("Start", "Unsuspend") else ("Uuid",))],
+            Sinks=[SinksItem(Sink=SinkReference(value=action_member_ref(MQTT_INTERFACE, name, "input")), SinkId=name)],
+            ResponseSources=[
+                DmpResponseSource(SourceId="Reply", Source=action_member_ref(MQTT_INTERFACE, name, "output")),
+            ],
+            ResponseTransformation=(
+                "function aimc_main(sources) local reply = sources.Reply "
+                "return { Uuid = reply.Uuid, State = reply.State } end"
+            ),
+            ResponseSinks=[DmpResponseSink(SinkId=member, Sink=operation_variable_ref(name, member))
+                           for member in ("Uuid", "State")],
         )
         if name in ("Start", "Unsuspend"):
             skill.operation.input_variable = [Property(id_short="Process")]
@@ -110,22 +110,60 @@ def orchestrator() -> MqttSoftwareResource:
                 f"return {{ {name} = {{ Uuid = sources.Uuid, Process = sources.Process }} }} end"
             ).encode("utf-8")
         cci.Skills.Skill[name] = skill
-        cci.Endpoints.Endpoint[name] = SkillInterfaceRelationship(id_short=name, first=ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/ControlComponentInstance"), Key(type_="SubmodelElementCollection", value="Skills"), Key(type_="SubmodelElementCollection", value=name))), second=ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/AssetInterfacesDescription"), Key(type_="SubmodelElementCollection", value="interface_mqtt"), Key(type_="SubmodelElementCollection", value="InteractionMetadata"), Key(type_="SubmodelElementCollection", value="actions"), Key(type_="SubmodelElementCollection", value=name))))
+        cci.Endpoints.Endpoint[name] = SkillInterfaceRelationship(
+            first=skill_ref(name),
+            second=affordance_ref(MQTT_INTERFACE, "actions", name),
+        )
         mappings.append(mapping)
     resource.capability_description.CapabilitySet = {
-        "Coordination": CapabilitySet(id_short="Coordination", CapabilityContainer={
-            "Orchestrate": CapabilityContainer(id_short="Orchestrate", Capability=Capability(id_short="Capability", semantic_id=f"{CSSX}#Orchestrate"), CapabilityRelations=CapabilityRelations(id_short="CapabilityRelations", CapabilityRealizedBy={
-                "RealizedBy_Start": CapabilityRealizedBy(id_short="RealizedBy_Start", first=ModelReference(key=(Key(type_="Submodel", value="{aas_id}/submodels/CapabilityDescription"), Key(type_="SubmodelElementCollection", value="Coordination"), Key(type_="SubmodelElementCollection", value="Orchestrate"), Key(type_="Capability", value="Capability"))), second=skill_ref("Start")),
-            }))
-        })
+        "Coordination": CapabilitySet(
+            id_short="Coordination",
+            CapabilityContainer={
+                "Orchestrate": CapabilityContainer(
+                    id_short="Orchestrate",
+                    Capability=Capability(id_short="Capability", semantic_id=f"{CSSX}#Orchestrate"),
+                    CapabilityRelations=CapabilityRelations(
+                        CapabilityRealizedBy={
+                            "RealizedBy_Start": CapabilityRealizedBy(
+                                first=capability_ref("Coordination", "Orchestrate"),
+                                second=skill_ref("Start"),
+                            ),
+                        }
+                    ),
+                )
+            },
+        )
     }
 
     state_url = f"{SCHEMA_BASE}/state.schema.json"
-    resource.variables.variable["PackMLState"] = VariableProp(id_short="PackMLState", semantic_id="https://w3id.org/2026/apex/semantic/state/operational")
-    state = mqtt_property("State", "DATA/State", schema=load_schema(state_url), schema_url=state_url)
+    resource.variables.variable["PackMLState"] = VariableProp(
+        id_short="PackMLState", semantic_id=STATE_OPERATIONAL
+    )
+    state = datapoint_from_schema(
+        load_schema(state_url),
+        key="State",
+        schema_url=state_url,
+        title=Title(value="State"),
+        observable="true",
+        readOnly="true",
+        forms=MqttForm(href="DATA/State", mqv_retain="true", mqv_qos="0"),
+    )
     interaction.properties.property_name["State"] = state
     # Software doesn't have station ProcessQueue; declare only actual telemetry.
-    mappings.append(DmpMappingConfiguration(id_short="ObserveState", DefaultPollingInterval=DefaultPollingInterval(value="0.0"), Transformation=Transformation(value="function aimc_main(sources) return { PackMLState = sources.State.State } end"), Sources=Sources(value=[SourcesItem(id_short="State", Source=SourceReference(value=affordance_ref(MQTT_INTERFACE, "properties", "State")), SourceId=SourceId(value="State"))]), Sinks=Sinks(value=[SinksItem(id_short="PackMLState", Sink=SinkReference(value=variable_ref("PackMLState")), SinkId=SinkId(value="PackMLState"))])))
+    mappings.append(
+        DmpMappingConfiguration(
+            id_short="ObserveState",
+            DefaultPollingInterval="0.0",
+            Transformation="function aimc_main(sources) return { PackMLState = sources.State.State } end",
+            Sources=[
+                SourcesItem(
+                    Source=SourceReference(value=affordance_ref(MQTT_INTERFACE, "properties", "State")),
+                    SourceId="State",
+                )
+            ],
+            Sinks=[SinksItem(Sink=SinkReference(value=variable_ref("PackMLState")), SinkId="PackMLState")],
+        )
+    )
 
     http = DmpHttpInterface(
         id_short="interface_http",
@@ -139,7 +177,12 @@ def orchestrator() -> MqttSoftwareResource:
     http.InteractionMetadata.actions = DmpActions(id_short="actions")
     http.InteractionMetadata.properties = DmpProperties(id_short="properties")
     for name in ("Start", "Stop", "Reset"):
-        action = DmpAction(id_short=name, title=AIDTitle(id_short="title", value=name), synchronous=Synchronous(id_short="synchronous", value="true"))
+        action = DmpAction(
+            id_short=name,
+            title=AIDTitle(id_short="title", value=name),
+            synchronous=Synchronous(id_short="synchronous", value="true"),
+            forms=HttpActionForm(href=f"/operations/{name}", htv_methodName="POST"),
+        )
         input_schema = "orchestrationCommand" if name == "Start" else "command"
         input_url = f"{SCHEMA_BASE}/{input_schema}.schema.json"
         output_url = f"{SCHEMA_BASE}/commandResponse.schema.json"
@@ -147,10 +190,8 @@ def orchestrator() -> MqttSoftwareResource:
         action.input.id_short = "input"
         action.output = datapoint_from_schema(load_schema(output_url), cls=DmpActionOutput, schema_url=output_url)
         action.output.id_short = "output"
-        action.forms.href.value = f"/operations/{name}"
-        action.forms.htv_methodName = HtvMethodName(id_short="htv_methodName", value="POST")
         http.InteractionMetadata.actions.property_name[name] = action
-    health = DmpProperty(id_short="Health", **({"readOnly": ReadOnly(value="true")} if ReadOnly else {}), forms=DmpForm(
+    health = DmpProperty(id_short="Health", **({"readOnly": ReadOnly(value="true")} if ReadOnly else {}), forms=HttpForm(
         href=Href(value="/health"), htv_methodName=HtvMethodName(value="GET"),
     ))
     health.key = AIDKey(id_short="key", value="Health")
@@ -159,5 +200,4 @@ def orchestrator() -> MqttSoftwareResource:
     populate_datapoint(health, load_schema(state_url), schema_url=state_url)
     http.InteractionMetadata.properties.property_name["Health"] = health
     aid.InterfaceTemplateForHTTP["interface_http"] = http
-    finalize_invocation_addresses(resource)
     return resource

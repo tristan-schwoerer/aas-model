@@ -33,7 +33,7 @@ import re
 
 from typing import ClassVar, List, Optional
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 from aas_pydantic import (
     Property, ReferenceElement, SubmodelElementCollection, SubmodelElementList,
@@ -63,9 +63,25 @@ from aas_model.constants import (
 from aas_pydantic.submodel_templates.asset_interfaces_mapping_configuration import (
     SourcesItem as _SourcesItem,
     Sources as _BaseSources,
+    SinksItem as _SinksItem,
+    Sinks as _BaseSinks,
     SinkId as _SinkId,
     SourceId as _SourceId,
 )
+
+
+class _NamedByItsId(SubmodelElementCollection):
+    """A source or sink, named after its ``SourceId``/``SinkId`` unless named otherwise. Its name stays out of
+    the AAS (AASd-120: list items have none) but names it in the pydantic JSON and in its class markers."""
+    ID_FIELD: ClassVar[str]
+
+    @model_validator(mode="after")
+    def _named_after_its_id(self):
+        unnamed = self.id_short == SubmodelElementCollection.model_fields["id_short"].default
+        identifier = getattr(self, self.ID_FIELD, None)
+        if unnamed and identifier is not None and identifier.value:
+            self.id_short = identifier.value
+        return self
 
 
 class DmpResponseTransformation(Blob):
@@ -87,10 +103,11 @@ class DmpResponseSourceId(_SourceId):
     semantic_id: str = AIMC_RESPONSE_SOURCE_ID
 
 
-class DmpResponseSource(SubmodelElementCollection):
+class DmpResponseSource(_NamedByItsId):
     """A response source: the action's output, or a member of it."""
     semantic_id: str = AIMC_RESPONSE_SOURCE
     description: str = "A response source: the output of the invoked action, or a member of it."
+    ID_FIELD: ClassVar[str] = "SourceId"
     Source: DmpResponseSourceReference
     SourceId: DmpResponseSourceId
 
@@ -111,9 +128,10 @@ class DmpResponseSinkId(_SinkId):
     semantic_id: str = AIMC_RESPONSE_SINK_ID
 
 
-class DmpResponseSink(SubmodelElementCollection):
+class DmpResponseSink(_NamedByItsId):
     semantic_id: str = AIMC_RESPONSE_SINK
     description: str = "A correlated response sink reference and its transformation identifier."
+    ID_FIELD: ClassVar[str] = "SinkId"
     Sink: DmpResponseSinkReference
     SinkId: DmpResponseSinkId
 
@@ -178,9 +196,15 @@ class DmpInvocationTimeout(Property):
         return value
 
 
-class DmpSource(_SourcesItem):
+class DmpSource(_NamedByItsId, _SourcesItem):
     """IDTA Source + the optional Evaluation."""
+    ID_FIELD: ClassVar[str] = "SourceId"
     Evaluation: Optional[DmpEvaluation] = None
+
+
+class DmpSink(_NamedByItsId, _SinksItem):
+    """IDTA Sink, named after its SinkId."""
+    ID_FIELD: ClassVar[str] = "SinkId"
 
 
 def _fields(model) -> dict:
@@ -203,15 +227,37 @@ class DmpSources(_BaseSources):
                 else DmpSource(**_fields(item)) for item in value]
 
 
+class DmpSinks(_BaseSinks):
+    """IDTA Sinks over DmpSink items; plain IDTA Sinks items become DmpSink items."""
+    item_type: ClassVar = DmpSink
+    value: List[DmpSink] = []
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def _as_dmp_sinks(cls, value):
+        if not isinstance(value, list):
+            return value
+        return [item if isinstance(item, DmpSink) or not isinstance(item, _SinksItem)
+                else DmpSink(**_fields(item)) for item in value]
+
+
 class DmpMappingConfiguration(_BaseMappingConfiguration):
     """IDTA MappingConfiguration + optional correlated response mapping; its Sources may carry an Evaluation."""
     Sources: DmpSources
+    Sinks: DmpSinks
 
     @field_validator("Sources", mode="before")
     @classmethod
     def _as_dmp_sources(cls, value):
         if isinstance(value, _BaseSources) and not isinstance(value, DmpSources):
             return DmpSources(**_fields(value))
+        return value
+
+    @field_validator("Sinks", mode="before")
+    @classmethod
+    def _as_dmp_sinks(cls, value):
+        if isinstance(value, _BaseSinks) and not isinstance(value, DmpSinks):
+            return DmpSinks(**_fields(value))
         return value
 
     ResponseTransformation: Optional[DmpResponseTransformation] = None
